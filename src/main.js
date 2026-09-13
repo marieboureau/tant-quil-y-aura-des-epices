@@ -1,278 +1,48 @@
 import './styles.css'
 import { supabase } from './supabase'
 
-const app = document.querySelector('#app')
+const app=document.querySelector('#app')
+let session=null,products=[],customers=[],categories=[],cart=[],selectedCustomer=null,paymentMode='card'
 
-let session = null
-let products = []
-let customers = []
-let categories = []
+const eur=v=>Number(v||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))
 
-async function init() {
-  const { data } = await supabase.auth.getSession()
-  session = data.session
-  render()
+async function init(){const {data}=await supabase.auth.getSession();session=data.session;render();supabase.auth.onAuthStateChange((_e,s)=>{session=s;render()})}
+function render(){if(!session)return renderLogin();renderShell();loadData()}
+function renderLogin(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><h1>Tant qu’il y aura des Épices</h1><p class="muted">Connexion à l’application de gestion.</p><label class="small">Email</label><input id="email" class="field" type="email"><label class="small" style="display:block;margin-top:10px">Mot de passe</label><input id="password" class="field" type="password"><button id="loginBtn" class="primary" style="width:100%;margin-top:14px">Se connecter</button><div id="loginMsg" class="small" style="margin-top:10px"></div></div></div>`;loginBtn.onclick=login}
+async function login(){loginMsg.textContent='Connexion…';const {error}=await supabase.auth.signInWithPassword({email:email.value.trim(),password:password.value});loginMsg.textContent=error?error.message:''}
 
-  supabase.auth.onAuthStateChange((_event, newSession) => {
-    session = newSession
-    render()
-  })
-}
+function renderShell(){app.innerHTML=`<div class="app"><aside><div class="brand">Tant qu’il y aura des Épices</div><div class="sub">V1 réelle — Sprint 2</div><nav><button class="active" data-tab="sell">Vendre</button><button data-tab="products">Produits</button><button data-tab="clients">Clients</button><button data-tab="history">Historique</button></nav></aside><main>
+<section id="sell" class="section active"><div class="top"><div><h1>Vendre</h1><div class="muted">Panier, règlement et fidélité.</div></div><button id="logoutBtn" class="secondary">Déconnexion</button></div><div class="grid sell-layout"><div class="card"><input id="sellSearch" class="field" placeholder="Rechercher un produit…"><div id="sellProducts" class="product-grid"></div></div><div class="card"><h2>Ticket</h2><div id="cart"></div><div id="cartEmpty" class="muted">Touchez un produit pour l’ajouter.</div><label class="small">Client fidélité</label><input id="customerSearch" class="field" placeholder="Rechercher un client…"><div id="customerHints"></div><div id="selectedCustomer" class="notice" style="display:none;margin-top:8px"></div><div class="row space" style="margin-top:14px"><b>Total</b><span id="cartTotal" class="total">0,00 €</span></div><label class="small">Mode de règlement</label><div class="payments"><button class="pay active" data-pay="card">CB</button><button class="pay" data-pay="cash">Espèces</button><button class="pay" data-pay="cheque">Chèque</button></div><button id="mixedBtn" class="secondary" style="width:100%;margin-top:8px">Paiement mixte</button><div id="mixedBox" style="display:none"><div class="grid" style="margin-top:8px"><input id="mixCard" class="field" type="number" step="0.01" placeholder="CB €"><input id="mixCash" class="field" type="number" step="0.01" placeholder="Espèces €"></div></div><button id="validateSale" class="primary" style="width:100%;margin-top:12px">Valider la vente</button><div id="saleMsg" class="small" style="margin-top:8px"></div></div></div></section>
+<section id="products" class="section"><div class="top"><div><h1>Produits</h1><div class="muted">Catalogue réel Supabase.</div></div><button id="addProductBtn" class="primary">+ Produit</button></div><div class="card"><input id="productSearch" class="field" placeholder="Rechercher…" style="margin-bottom:10px"><div style="overflow:auto"><table><thead><tr><th>Produit</th><th>Catégorie</th><th>Stock</th><th>Achat HT</th><th>Vente HT</th><th>Cadeau</th></tr></thead><tbody id="productRows"></tbody></table></div></div></section>
+<section id="clients" class="section"><div class="top"><div><h1>Clients</h1><div class="muted">Clients et fidélité.</div></div><button id="addClientBtn" class="primary">+ Client</button></div><div class="card"><input id="clientSearch" class="field" placeholder="Rechercher…" style="margin-bottom:10px"><div style="overflow:auto"><table><thead><tr><th>Client</th><th>Téléphone</th><th>Email</th></tr></thead><tbody id="clientRows"></tbody></table></div></div></section>
+<section id="history" class="section"><div class="top"><div><h1>Historique des ventes</h1><div class="muted">Derniers tickets enregistrés.</div></div></div><div class="card"><div style="overflow:auto"><table><thead><tr><th>Date</th><th>Client</th><th>Total</th><th>Statut</th></tr></thead><tbody id="salesRows"></tbody></table></div></div></section>
+</main></div>
+<dialog id="productDialog"><form method="dialog" class="card dialog-card"><h2>Nouveau produit</h2><label class="small">Nom</label><input id="pName" class="field"><label class="small">Catégorie</label><select id="pCategory" class="field"></select><div class="grid" style="margin-top:10px"><input id="pStock" type="number" class="field" placeholder="Stock g"><input id="pThreshold" type="number" class="field" placeholder="Seuil g"></div><div class="grid" style="margin-top:10px"><input id="pBuy" type="number" step="0.01" class="field" placeholder="Achat HT/100g"><input id="pSell" type="number" step="0.01" class="field" placeholder="Vente HT/100g"></div><div class="row" style="justify-content:flex-end;margin-top:14px"><button value="cancel" class="secondary">Annuler</button><button id="saveProductBtn" type="button" class="primary">Enregistrer</button></div><div id="productMsg" class="small"></div></form></dialog>
+<dialog id="clientDialog"><form method="dialog" class="card dialog-card"><h2>Nouveau client</h2><input id="cName" class="field" placeholder="Nom"><input id="cPhone" class="field" placeholder="Téléphone" style="margin-top:8px"><input id="cEmail" class="field" type="email" placeholder="Email" style="margin-top:8px"><div class="row" style="justify-content:flex-end;margin-top:14px"><button value="cancel" class="secondary">Annuler</button><button id="saveClientBtn" type="button" class="primary">Enregistrer</button></div><div id="clientMsg" class="small"></div></form></dialog>`
+logoutBtn.onclick=()=>supabase.auth.signOut();document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>switchTab(b));sellSearch.oninput=renderSellProducts;productSearch.oninput=renderProducts;clientSearch.oninput=renderCustomers;customerSearch.oninput=renderCustomerHints;addProductBtn.onclick=openProductDialog;addClientBtn.onclick=()=>clientDialog.showModal();saveProductBtn.onclick=saveProduct;saveClientBtn.onclick=saveCustomer;validateSale.onclick=completeSale;mixedBtn.onclick=()=>mixedBox.style.display=mixedBox.style.display==='none'?'block':'none';document.querySelectorAll('.pay').forEach(b=>b.onclick=()=>{document.querySelectorAll('.pay').forEach(x=>x.classList.remove('active'));b.classList.add('active');paymentMode=b.dataset.pay;mixedBox.style.display='none'})}
 
-function render() {
-  if (!session) return renderLogin()
-  renderShell()
-  loadInitialData()
-}
+function switchTab(btn){document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.querySelector('#'+btn.dataset.tab).classList.add('active')}
 
-function renderLogin() {
-  app.innerHTML = `
-    <div class="login-wrap">
-      <div class="login-card">
-        <h1>Tant qu’il y aura des Épices</h1>
-        <p class="muted">Connexion à l’application de gestion.</p>
-        <label class="small">Email</label>
-        <input id="email" class="field" type="email" placeholder="email@exemple.fr">
-        <label class="small" style="display:block;margin-top:10px">Mot de passe</label>
-        <input id="password" class="field" type="password">
-        <button id="loginBtn" class="primary" style="width:100%;margin-top:14px">Se connecter</button>
-        <div id="loginMsg" class="small" style="margin-top:10px"></div>
-      </div>
-    </div>
-  `
-  document.querySelector('#loginBtn').onclick = login
-}
+async function loadData(){const [cr,pr,cur,sr]=await Promise.all([supabase.from('product_categories').select('id,name').eq('active',true).order('sort_order'),supabase.from('products').select('id,name,stock_quantity,stock_unit,stock_alert_threshold,purchase_price_ht,sale_price_ht,sale_price_basis,loyalty_eligible,loyalty_reward_quantity,category_id').eq('active',true).order('name'),supabase.from('customers').select('id,display_name,phone,email').eq('active',true).order('display_name'),supabase.from('sales').select('id,sold_at,total_ttc,status,customer_id').order('sold_at',{ascending:false}).limit(30)]);const err=[cr.error,pr.error,cur.error,sr.error].find(Boolean);if(err){saleMsg.textContent='Erreur Supabase : '+err.message;return}categories=cr.data;products=pr.data;customers=cur.data;renderSellProducts();renderProducts();renderCustomers();renderSales(sr.data)}
 
-async function login() {
-  const email = document.querySelector('#email').value.trim()
-  const password = document.querySelector('#password').value
-  const msg = document.querySelector('#loginMsg')
-  msg.textContent = 'Connexion…'
-  const { error } = await supabase.auth.signInWithPassword({ email, password })
-  msg.textContent = error ? error.message : ''
-}
+function renderSellProducts(){const q=sellSearch?.value.toLowerCase().trim()||'';sellProducts.innerHTML=products.filter(p=>p.name.toLowerCase().includes(q)).map(p=>`<button class="product-card" data-id="${p.id}"><b>${esc(p.name)}</b><span>${eur(p.sale_price_ht)} / 100 g</span><small class="${Number(p.stock_quantity)<=Number(p.stock_alert_threshold)?'low':''}">${Number(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}</small></button>`).join('');document.querySelectorAll('.product-card').forEach(b=>b.onclick=()=>addToCart(b.dataset.id))}
+function addToCart(id){const p=products.find(x=>x.id===id);const x=cart.find(c=>c.id===id);if(x)x.qty+=100;else cart.push({id,qty:100});renderCart()}
+function renderCart(){cartEmpty.style.display=cart.length?'none':'block';document.querySelector('#cart').innerHTML=cart.map((x,i)=>{const p=products.find(z=>z.id===x.id);return `<div class="cartline"><div class="row space"><b>${esc(p.name)}</b><button class="danger remove" data-i="${i}">×</button></div><div class="row space"><div class="qty"><button class="secondary minus" data-i="${i}">−50</button><input class="field qtyInput" data-i="${i}" type="number" min="1" value="${x.qty}"><button class="secondary plus" data-i="${i}">+50</button><span>${esc(p.stock_unit)}</span></div><b>${eur(p.sale_price_ht*x.qty/(p.sale_price_basis||100))}</b></div></div>`}).join('');document.querySelectorAll('.remove').forEach(b=>b.onclick=()=>{cart.splice(+b.dataset.i,1);renderCart()});document.querySelectorAll('.minus').forEach(b=>b.onclick=()=>{const i=+b.dataset.i;cart[i].qty=Math.max(1,cart[i].qty-50);renderCart()});document.querySelectorAll('.plus').forEach(b=>b.onclick=()=>{cart[+b.dataset.i].qty+=50;renderCart()});document.querySelectorAll('.qtyInput').forEach(i=>i.onchange=()=>{cart[+i.dataset.i].qty=Math.max(1,+i.value||1);renderCart()});cartTotal.textContent=eur(ticketTotal())}
+function ticketTotal(){return cart.reduce((s,x)=>{const p=products.find(z=>z.id===x.id);return s+p.sale_price_ht*x.qty/(p.sale_price_basis||100)},0)}
+function renderCustomerHints(){const q=customerSearch.value.toLowerCase().trim();customerHints.innerHTML=q?customers.filter(c=>c.display_name.toLowerCase().includes(q)).slice(0,6).map(c=>`<button class="hint" data-id="${c.id}">${esc(c.display_name)}</button>`).join(''):'';document.querySelectorAll('.hint').forEach(b=>b.onclick=()=>selectCustomer(b.dataset.id))}
+function selectCustomer(id){selectedCustomer=customers.find(c=>c.id===id)||null;customerHints.innerHTML='';customerSearch.value=selectedCustomer?.display_name||'';if(selectedCustomer){selectedCustomerEl().style.display='block';selectedCustomerEl().textContent='Client : '+selectedCustomer.display_name}}
+function selectedCustomerEl(){return document.querySelector('#selectedCustomer')}
 
-function renderShell() {
-  app.innerHTML = `
-    <div class="app">
-      <aside>
-        <div class="brand">Tant qu’il y aura des Épices</div>
-        <div class="sub">V1 réelle — Sprint 1</div>
-        <nav>
-          <button class="active" data-tab="dashboard">Accueil</button>
-          <button data-tab="products">Produits</button>
-          <button data-tab="clients">Clients</button>
-        </nav>
-      </aside>
-      <main>
-        <section id="dashboard" class="section active">
-          <div class="top">
-            <div><h1>Accueil</h1><div class="muted">Connexion Supabase active.</div></div>
-            <button id="logoutBtn" class="secondary">Déconnexion</button>
-          </div>
-          <div id="status" class="notice">Chargement des données…</div>
-          <div class="grid" style="margin-top:16px">
-            <div class="card"><div class="muted">Produits</div><h1 id="productCount">—</h1></div>
-            <div class="card"><div class="muted">Clients</div><h1 id="customerCount">—</h1></div>
-          </div>
-        </section>
+async function completeSale(){saleMsg.textContent='';if(!cart.length)return saleMsg.textContent='Ajoute au moins un produit.';for(const x of cart){const p=products.find(z=>z.id===x.id);if(x.qty>Number(p.stock_quantity))return saleMsg.textContent=`Stock insuffisant pour ${p.name}.`}const total=Number(ticketTotal().toFixed(2));let payments=[];if(mixedBox.style.display!=='none'){const cb=Number(mixCard.value||0),cash=Number(mixCash.value||0);if(Math.abs(cb+cash-total)>0.01)return saleMsg.textContent='Le paiement mixte doit être égal au total.';if(cb>0)payments.push({method:'card',amount:cb});if(cash>0)payments.push({method:'cash',amount:cash})}else payments=[{method:paymentMode,amount:total}];saleMsg.textContent='Enregistrement…';const {error}=await supabase.rpc('complete_sale',{p_customer_id:selectedCustomer?.id||null,p_lines:cart.map(x=>({product_id:x.id,quantity:x.qty})),p_payments:payments,p_note:null});if(error){saleMsg.textContent='Erreur : '+error.message;return}saleMsg.textContent='Vente enregistrée.';cart=[];selectedCustomer=null;customerSearch.value='';selectedCustomerEl().style.display='none';renderCart();await loadData()}
 
-        <section id="products" class="section">
-          <div class="top">
-            <div><h1>Produits</h1><div class="muted">Données réelles lues depuis Supabase.</div></div>
-            <button id="addProductBtn" class="primary">+ Produit</button>
-          </div>
-          <div class="card">
-            <input id="productSearch" class="field" placeholder="Rechercher un produit…" style="margin-bottom:10px">
-            <div style="overflow:auto">
-              <table>
-                <thead><tr><th>Produit</th><th>Catégorie</th><th>Stock</th><th>Achat HT</th><th>Vente HT</th><th>Cadeau</th></tr></thead>
-                <tbody id="productRows"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
+function renderProducts(){const q=productSearch.value.toLowerCase().trim();productRows.innerHTML=products.filter(p=>p.name.toLowerCase().includes(q)).map(p=>{const cat=categories.find(c=>c.id===p.category_id)?.name||'—';return `<tr><td><b>${esc(p.name)}</b></td><td>${esc(cat)}</td><td>${Number(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}</td><td>${eur(p.purchase_price_ht)}</td><td>${eur(p.sale_price_ht)}</td><td>${p.loyalty_eligible?'Oui':'Non'}</td></tr>`}).join('')}
+function renderCustomers(){const q=clientSearch.value.toLowerCase().trim();clientRows.innerHTML=customers.filter(c=>c.display_name.toLowerCase().includes(q)).map(c=>`<tr><td><b>${esc(c.display_name)}</b></td><td>${esc(c.phone||'')}</td><td>${esc(c.email||'')}</td></tr>`).join('')}
+function renderSales(rows){salesRows.innerHTML=rows.map(s=>{const c=customers.find(x=>x.id===s.customer_id)?.display_name||'—';return `<tr><td>${new Date(s.sold_at).toLocaleString('fr-FR')}</td><td>${esc(c)}</td><td>${eur(s.total_ttc)}</td><td>${esc(s.status)}</td></tr>`}).join('')}
 
-        <section id="clients" class="section">
-          <div class="top">
-            <div><h1>Clients</h1><div class="muted">Données réelles lues depuis Supabase.</div></div>
-            <button id="addClientBtn" class="primary">+ Client</button>
-          </div>
-          <div class="card">
-            <input id="clientSearch" class="field" placeholder="Rechercher un client…" style="margin-bottom:10px">
-            <div style="overflow:auto">
-              <table>
-                <thead><tr><th>Client</th><th>Téléphone</th><th>Email</th></tr></thead>
-                <tbody id="clientRows"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-      </main>
-    </div>
-
-    <dialog id="productDialog">
-      <form method="dialog" class="card" style="min-width:min(520px,90vw)">
-        <h2>Nouveau produit</h2>
-        <label class="small">Nom</label><input id="pName" class="field">
-        <label class="small">Catégorie</label><select id="pCategory" class="field"></select>
-        <div class="grid" style="margin-top:10px">
-          <div><label class="small">Stock initial (g)</label><input id="pStock" type="number" class="field" value="0"></div>
-          <div><label class="small">Seuil d'alerte (g)</label><input id="pThreshold" type="number" class="field" value="500"></div>
-        </div>
-        <div class="grid" style="margin-top:10px">
-          <div><label class="small">Achat HT /100g</label><input id="pBuy" type="number" step="0.01" class="field" value="0"></div>
-          <div><label class="small">Vente HT /100g</label><input id="pSell" type="number" step="0.01" class="field" value="0"></div>
-        </div>
-        <div class="row" style="justify-content:flex-end;margin-top:14px">
-          <button value="cancel" class="secondary">Annuler</button>
-          <button id="saveProductBtn" type="button" class="primary">Enregistrer</button>
-        </div>
-        <div id="productMsg" class="small"></div>
-      </form>
-    </dialog>
-
-    <dialog id="clientDialog">
-      <form method="dialog" class="card" style="min-width:min(520px,90vw)">
-        <h2>Nouveau client</h2>
-        <label class="small">Nom affiché</label><input id="cName" class="field">
-        <label class="small">Téléphone</label><input id="cPhone" class="field">
-        <label class="small">Email</label><input id="cEmail" type="email" class="field">
-        <div class="row" style="justify-content:flex-end;margin-top:14px">
-          <button value="cancel" class="secondary">Annuler</button>
-          <button id="saveClientBtn" type="button" class="primary">Enregistrer</button>
-        </div>
-        <div id="clientMsg" class="small"></div>
-      </form>
-    </dialog>
-  `
-
-  document.querySelector('#logoutBtn').onclick = () => supabase.auth.signOut()
-  document.querySelectorAll('nav button').forEach(btn => btn.onclick = () => switchTab(btn))
-  document.querySelector('#productSearch').oninput = renderProducts
-  document.querySelector('#clientSearch').oninput = renderCustomers
-  document.querySelector('#addProductBtn').onclick = openProductDialog
-  document.querySelector('#addClientBtn').onclick = () => document.querySelector('#clientDialog').showModal()
-  document.querySelector('#saveProductBtn').onclick = saveProduct
-  document.querySelector('#saveClientBtn').onclick = saveCustomer
-}
-
-function switchTab(btn) {
-  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'))
-  btn.classList.add('active')
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'))
-  document.querySelector('#' + btn.dataset.tab).classList.add('active')
-}
-
-async function loadInitialData() {
-  const status = document.querySelector('#status')
-  const [catsRes, productsRes, customersRes] = await Promise.all([
-    supabase.from('product_categories').select('id,name').eq('active', true).order('sort_order'),
-    supabase.from('products').select('id,name,stock_quantity,purchase_price_ht,sale_price_ht,loyalty_eligible,category_id').eq('active', true).order('name'),
-    supabase.from('customers').select('id,display_name,phone,email').eq('active', true).order('display_name')
-  ])
-
-  const errors = [catsRes.error, productsRes.error, customersRes.error].filter(Boolean)
-  if (errors.length) {
-    status.textContent = 'Erreur Supabase : ' + errors.map(e => e.message).join(' | ')
-    return
-  }
-
-  categories = catsRes.data
-  products = productsRes.data
-  customers = customersRes.data
-
-  status.textContent = `Connecté à Supabase — ${products.length} produits et ${customers.length} clients chargés.`
-  document.querySelector('#productCount').textContent = products.length
-  document.querySelector('#customerCount').textContent = customers.length
-  renderProducts()
-  renderCustomers()
-}
-
-function renderProducts() {
-  const input = document.querySelector('#productSearch')
-  if (!input) return
-  const q = input.value.toLowerCase().trim()
-  const rows = products.filter(p => p.name.toLowerCase().includes(q))
-  document.querySelector('#productRows').innerHTML = rows.map(p => {
-    const cat = categories.find(c => c.id === p.category_id)?.name ?? '—'
-    return `<tr>
-      <td><b>${escapeHtml(p.name)}</b></td>
-      <td>${escapeHtml(cat)}</td>
-      <td>${Number(p.stock_quantity).toLocaleString('fr-FR')} g</td>
-      <td>${Number(p.purchase_price_ht).toFixed(2)} €</td>
-      <td>${Number(p.sale_price_ht).toFixed(2)} €</td>
-      <td>${p.loyalty_eligible ? 'Oui' : 'Non'}</td>
-    </tr>`
-  }).join('')
-}
-
-function renderCustomers() {
-  const input = document.querySelector('#clientSearch')
-  if (!input) return
-  const q = input.value.toLowerCase().trim()
-  const rows = customers.filter(c => c.display_name.toLowerCase().includes(q))
-  document.querySelector('#clientRows').innerHTML = rows.map(c => `<tr>
-    <td><b>${escapeHtml(c.display_name)}</b></td>
-    <td>${escapeHtml(c.phone || '')}</td>
-    <td>${escapeHtml(c.email || '')}</td>
-  </tr>`).join('')
-}
-
-function openProductDialog() {
-  document.querySelector('#pCategory').innerHTML = categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')
-  document.querySelector('#productDialog').showModal()
-}
-
-async function saveProduct() {
-  const msg = document.querySelector('#productMsg')
-  const payload = {
-    name: document.querySelector('#pName').value.trim(),
-    category_id: document.querySelector('#pCategory').value || null,
-    stock_unit: 'g',
-    purchase_unit: 'sachet',
-    purchase_unit_quantity: 500,
-    purchase_unit_stock_equivalent: 500,
-    stock_quantity: Number(document.querySelector('#pStock').value || 0),
-    stock_alert_threshold: Number(document.querySelector('#pThreshold').value || 0),
-    purchase_price_ht: Number(document.querySelector('#pBuy').value || 0),
-    purchase_price_basis: 100,
-    sale_price_ht: Number(document.querySelector('#pSell').value || 0),
-    sale_price_basis: 100
-  }
-  if (!payload.name) return msg.textContent = 'Nom obligatoire.'
-  const { data: profile, error: profileError } = await supabase.from('user_profiles').select('organization_id').single()
-  if (profileError) return msg.textContent = profileError.message
-  payload.organization_id = profile.organization_id
-
-  const { error } = await supabase.from('products').insert(payload)
-  if (error) return msg.textContent = error.message
-  document.querySelector('#productDialog').close()
-  await loadInitialData()
-}
-
-async function saveCustomer() {
-  const msg = document.querySelector('#clientMsg')
-  const name = document.querySelector('#cName').value.trim()
-  if (!name) return msg.textContent = 'Nom obligatoire.'
-  const { data: profile, error: profileError } = await supabase.from('user_profiles').select('organization_id').single()
-  if (profileError) return msg.textContent = profileError.message
-
-  const { error } = await supabase.from('customers').insert({
-    organization_id: profile.organization_id,
-    display_name: name,
-    phone: document.querySelector('#cPhone').value.trim() || null,
-    email: document.querySelector('#cEmail').value.trim() || null
-  })
-  if (error) return msg.textContent = error.message
-  document.querySelector('#clientDialog').close()
-  await loadInitialData()
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, ch => ({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
-  })[ch])
-}
+function openProductDialog(){pCategory.innerHTML=categories.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');productDialog.showModal()}
+async function orgId(){const {data,error}=await supabase.from('user_profiles').select('organization_id').single();if(error)throw error;return data.organization_id}
+async function saveProduct(){try{productMsg.textContent='';const oid=await orgId();const payload={organization_id:oid,name:pName.value.trim(),category_id:pCategory.value||null,stock_unit:'g',purchase_unit:'sachet',purchase_unit_quantity:500,purchase_unit_stock_equivalent:500,stock_quantity:Number(pStock.value||0),stock_alert_threshold:Number(pThreshold.value||0),purchase_price_ht:Number(pBuy.value||0),purchase_price_basis:100,sale_price_ht:Number(pSell.value||0),sale_price_basis:100};if(!payload.name)return productMsg.textContent='Nom obligatoire.';const {error}=await supabase.from('products').insert(payload);if(error)throw error;productDialog.close();await loadData()}catch(e){productMsg.textContent=e.message}}
+async function saveCustomer(){try{clientMsg.textContent='';const name=cName.value.trim();if(!name)return clientMsg.textContent='Nom obligatoire.';const oid=await orgId();const {error}=await supabase.from('customers').insert({organization_id:oid,display_name:name,phone:cPhone.value.trim()||null,email:cEmail.value.trim()||null});if(error)throw error;clientDialog.close();await loadData()}catch(e){clientMsg.textContent=e.message}}
 
 init()
