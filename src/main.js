@@ -17,6 +17,7 @@ let cart = []
 let selectedCustomer = null
 let paymentMode = 'card'
 let pendingImport = null
+let managementExpenses = []
 
 const eur = value => Number(value || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
 const num = value => Number(value || 0)
@@ -84,6 +85,7 @@ function renderShell() {
           <button data-tab="products">Produits</button>
           <button data-tab="clients">Clients</button>
           <button data-tab="history">Historique</button>
+          <button data-tab="pilotage">Pilotage</button>
         </nav>
       </aside>
 
@@ -262,6 +264,116 @@ function renderShell() {
             </div>
           </div>
         </section>
+        <section id="pilotage" class="section">
+          <div class="top">
+            <div>
+              <h1>Pilotage</h1>
+              <div class="muted">CA, marge, seuils, URSSAF et compte de gestion.</div>
+            </div>
+            <button id="refreshPilotageBtn" class="secondary">Actualiser</button>
+          </div>
+
+          <div id="pilotageKpis" class="kpi-grid"></div>
+
+          <div class="grid pilotage-grid" style="margin-top:14px">
+            <div class="card">
+              <h2>Seuils 2026</h2>
+              <div id="thresholdsBox"></div>
+            </div>
+            <div class="card">
+              <h2>Préparation URSSAF</h2>
+              <div id="urssafBox"></div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:14px">
+            <div class="row space">
+              <div>
+                <h2>CA et marges mensuels</h2>
+                <div class="small">Barres = CA · ligne pleine = marge brute % · ligne pointillée = marge nette %</div>
+              </div>
+            </div>
+            <div id="pilotageChart" class="pilotage-chart"></div>
+          </div>
+
+          <div class="grid pilotage-grid" style="margin-top:14px">
+            <div class="card">
+              <h2>Top ventes — cumul annuel</h2>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Produit</th><th>Qté mois</th><th>Qté YTD</th><th>CA YTD</th><th>% CA</th><th>Marge YTD</th><th>% marge</th></tr></thead>
+                  <tbody id="topSalesRows"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="card">
+              <h2>Stocks sous seuil</h2>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Produit</th><th>Stock</th><th>Seuil</th></tr></thead>
+                  <tbody id="lowStockRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:14px">
+            <h2>Compte de gestion</h2>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mois</th><th>CA encaissé</th><th>Achats consommés</th><th>Marge brute</th><th>Taux marge brute</th>
+                    <th>Autres dépenses</th><th>Cotisations estimées</th><th>Versement libératoire estimé</th>
+                    <th>Solde de gestion estimé</th><th>Marge nette</th>
+                  </tr>
+                </thead>
+                <tbody id="managementRows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="grid pilotage-grid" style="margin-top:14px">
+            <div class="card">
+              <h2>Autres dépenses professionnelles</h2>
+              <div class="grid">
+                <input id="expenseDate" class="field" type="date">
+                <input id="expenseAmount" class="field" type="number" min="0" step="0.01" placeholder="Montant €">
+              </div>
+              <input id="expenseLabel" class="field" style="margin-top:8px" placeholder="Libellé — ex. loyer, assurance, téléphone">
+              <button id="addExpenseBtn" class="primary" style="margin-top:8px">Ajouter la dépense</button>
+              <div id="expenseMsg" class="small" style="margin-top:6px"></div>
+              <div class="table-wrap" style="margin-top:12px">
+                <table>
+                  <thead><tr><th>Date</th><th>Libellé</th><th>Montant</th><th></th></tr></thead>
+                  <tbody id="expenseRows"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2>Paramètres de pilotage</h2>
+              <label class="small">Début d'activité</label>
+              <input id="settingActivityStart" class="field" type="date">
+              <div class="grid" style="margin-top:8px">
+                <div><label class="small">Cotisations sociales %</label><input id="settingSocialRate" class="field" type="number" step="0.01"></div>
+                <div><label class="small">Versement libératoire %</label><input id="settingTaxRate" class="field" type="number" step="0.01"></div>
+              </div>
+              <div class="grid" style="margin-top:8px">
+                <div><label class="small">TVA seuil base €</label><input id="settingVatBase" class="field" type="number"></div>
+                <div><label class="small">TVA seuil majoré €</label><input id="settingVatMajor" class="field" type="number"></div>
+              </div>
+              <label class="small" style="display:block;margin-top:8px">Seuil micro €</label>
+              <input id="settingMicroThreshold" class="field" type="number">
+              <button id="savePilotageSettingsBtn" class="primary" style="margin-top:10px">Enregistrer les paramètres</button>
+              <div id="settingsMsg" class="small" style="margin-top:6px"></div>
+              <div class="notice" style="margin-top:12px">
+                Les seuils sont paramétrables pour rester à jour. Les valeurs 2026 préchargées sont : TVA 85 000 € / 93 500 € et micro 203 100 €.
+              </div>
+            </div>
+          </div>
+        </section>
+
       </main>
     </div>
 
@@ -396,6 +508,9 @@ function bindEvents() {
 
   document.querySelector('#closeImportBtn').onclick = closeImport
   document.querySelector('#applyImportBtn').onclick = applyImport
+  document.querySelector('#refreshPilotageBtn').onclick = loadData
+  document.querySelector('#addExpenseBtn').onclick = addManagementExpense
+  document.querySelector('#savePilotageSettingsBtn').onclick = savePilotageSettings
 }
 
 function switchTab(btn) {
@@ -412,21 +527,22 @@ async function loadData() {
 
   const [
     categoriesRes, productsRes, customersRes, settingsRes,
-    loyaltyRes, salesRes, linesRes, paymentsRes
+    loyaltyRes, salesRes, linesRes, paymentsRes, expensesRes
   ] = await Promise.all([
     supabase.from('product_categories').select('id,name,active,sort_order').order('sort_order'),
     supabase.from('products').select('*').order('name'),
     supabase.from('customers').select('*').order('display_name'),
     supabase.from('settings').select('*').single(),
     supabase.from('loyalty_events').select('*').order('created_at', { ascending: false }),
-    supabase.from('sales').select('*').order('sold_at', { ascending: false }).limit(500),
-    supabase.from('sale_lines').select('*').limit(5000),
-    supabase.from('payments').select('*').order('paid_at', { ascending: false }).limit(5000)
+    supabase.from('sales').select('*').order('sold_at', { ascending: false }).limit(5000),
+    supabase.from('sale_lines').select('*').limit(50000),
+    supabase.from('payments').select('*').order('paid_at', { ascending: false }).limit(50000),
+    supabase.from('management_expenses').select('*').order('expense_date', { ascending: false }).limit(5000)
   ])
 
   const error = [
     categoriesRes.error, productsRes.error, customersRes.error, settingsRes.error,
-    loyaltyRes.error, salesRes.error, linesRes.error, paymentsRes.error
+    loyaltyRes.error, salesRes.error, linesRes.error, paymentsRes.error, expensesRes.error
   ].find(Boolean)
 
   if (error) return showGlobalError(error.message)
@@ -439,6 +555,7 @@ async function loadData() {
   sales = salesRes.data || []
   saleLines = linesRes.data || []
   payments = paymentsRes.data || []
+  managementExpenses = expensesRes.data || []
 
   renderAll()
 }
@@ -451,6 +568,7 @@ function renderAll() {
   renderSales()
   renderSaleLines()
   renderPayments()
+  renderPilotage()
 }
 
 function showGlobalError(message) {
@@ -1323,6 +1441,462 @@ async function applyImport() {
 function closeImport() {
   pendingImport = null
   document.querySelector('#importDialog').close()
+}
+
+
+// =========================================================
+// SPRINT 3 — PILOTAGE
+// =========================================================
+
+function completedSales() {
+  return sales.filter(s => s.status === 'completed')
+}
+
+function dateYear(value) {
+  return new Date(value).getFullYear()
+}
+
+function dateMonth(value) {
+  return new Date(value).getMonth()
+}
+
+function currentYear() {
+  return new Date().getFullYear()
+}
+
+function currentMonth() {
+  return new Date().getMonth()
+}
+
+function saleIsYtd(sale) {
+  return sale.status === 'completed' && dateYear(sale.sold_at) === currentYear()
+}
+
+function saleIsCurrentMonth(sale) {
+  return saleIsYtd(sale) && dateMonth(sale.sold_at) === currentMonth()
+}
+
+function lineSale(line) {
+  return saleById(line.sale_id)
+}
+
+function lineCost(line) {
+  if (line.line_cost_ht != null) return num(line.line_cost_ht)
+  const product = products.find(p => p.id === line.product_id)
+  if (!product) return 0
+  return num(product.purchase_price_ht) * num(line.quantity) / (num(product.purchase_price_basis) || 100)
+}
+
+function monthName(index) {
+  return ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'][index]
+}
+
+function monthLong(index) {
+  return ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'][index]
+}
+
+function pilotageMonthlyData() {
+  const year = currentYear()
+  const socialRate = num(settings?.micro_social_rate) / 100
+  const taxRate = num(settings?.income_tax_rate) / 100
+
+  return Array.from({ length: 12 }, (_, month) => {
+    const monthSales = sales.filter(s =>
+      s.status === 'completed' &&
+      dateYear(s.sold_at) === year &&
+      dateMonth(s.sold_at) === month
+    )
+    const ids = new Set(monthSales.map(s => s.id))
+    const lines = saleLines.filter(line => ids.has(line.sale_id))
+    const ca = monthSales.reduce((sum, sale) => sum + num(sale.total_ttc), 0)
+    const caHt = monthSales.reduce((sum, sale) => sum + num(sale.total_ht), 0)
+    const cost = lines.reduce((sum, line) => sum + lineCost(line), 0)
+    const grossMargin = caHt - cost
+    const expenses = managementExpenses
+      .filter(e => dateYear(e.expense_date) === year && dateMonth(e.expense_date) === month)
+      .reduce((sum, e) => sum + num(e.amount), 0)
+    const social = ca * socialRate
+    const incomeTax = ca * taxRate
+    const net = grossMargin - expenses - social - incomeTax
+
+    return {
+      month,
+      ca,
+      caHt,
+      cost,
+      grossMargin,
+      grossRate: caHt ? grossMargin / caHt * 100 : 0,
+      expenses,
+      social,
+      incomeTax,
+      net,
+      netRate: ca ? net / ca * 100 : 0
+    }
+  })
+}
+
+function renderPilotage() {
+  const section = document.querySelector('#pilotage')
+  if (!section || !settings) return
+
+  const monthly = pilotageMonthlyData()
+  const ytd = monthly.slice(0, currentMonth() + 1)
+  const month = monthly[currentMonth()]
+
+  const caYtd = ytd.reduce((s, m) => s + m.ca, 0)
+  const marginYtd = ytd.reduce((s, m) => s + m.grossMargin, 0)
+  const caHtYtd = ytd.reduce((s, m) => s + m.caHt, 0)
+  const grossRateYtd = caHtYtd ? marginYtd / caHtYtd * 100 : 0
+
+  document.querySelector('#pilotageKpis').innerHTML = `
+    <div class="card kpi"><div class="muted">CA du mois</div><div class="kpi-value">${eur(month.ca)}</div></div>
+    <div class="card kpi"><div class="muted">CA cumulé ${currentYear()}</div><div class="kpi-value">${eur(caYtd)}</div></div>
+    <div class="card kpi"><div class="muted">Marge brute cumulée</div><div class="kpi-value">${eur(marginYtd)}</div></div>
+    <div class="card kpi"><div class="muted">Taux de marge brute</div><div class="kpi-value">${grossRateYtd.toFixed(1)} %</div></div>
+  `
+
+  renderThresholds(caYtd)
+  renderUrssaf()
+  renderPilotageChart(monthly)
+  renderTopSales()
+  renderLowStocks()
+  renderManagementTable(monthly)
+  renderExpenses()
+  fillPilotageSettings()
+}
+
+function gauge(label, value, threshold, suffix = '') {
+  const ratio = threshold > 0 ? Math.min(100, value / threshold * 100) : 0
+  return `
+    <div class="gauge-block">
+      <div class="row space">
+        <b>${esc(label)}</b>
+        <span>${eur(value)} / ${eur(threshold)}${suffix}</span>
+      </div>
+      <div class="gauge"><span style="width:${ratio}%"></span></div>
+      <div class="small">${ratio.toFixed(1)} % du seuil</div>
+    </div>
+  `
+}
+
+function daysInYear(year) {
+  return ((new Date(year, 11, 31) - new Date(year, 0, 1)) / 86400000) + 1
+}
+
+function activeDaysInYear(startDate, year) {
+  if (!startDate) return daysInYear(year)
+  const start = new Date(startDate + 'T00:00:00')
+  if (start.getFullYear() < year) return daysInYear(year)
+  if (start.getFullYear() > year) return 0
+  return Math.round((new Date(year, 11, 31) - start) / 86400000) + 1
+}
+
+function renderThresholds(caYtd) {
+  const year = currentYear()
+  const start = settings.activity_start_date
+  const days = activeDaysInYear(start, year)
+  const yearDays = daysInYear(year)
+  const vatBase = num(settings.vat_base_threshold)
+  const vatMajor = num(settings.vat_major_threshold)
+  const micro = num(settings.micro_threshold)
+  const proratedVatBase = vatBase * days / yearDays
+  const proratedMicro = micro * days / yearDays
+  const firstYear = start && new Date(start + 'T00:00:00').getFullYear() === year
+
+  document.querySelector('#thresholdsBox').innerHTML = `
+    ${gauge('Franchise TVA — seuil de base', caYtd, vatBase)}
+    ${gauge('Franchise TVA — seuil majoré', caYtd, vatMajor)}
+    ${gauge('Régime micro — plafond annuel', caYtd, micro)}
+    ${firstYear ? `
+      <div class="notice" style="margin-top:10px">
+        Activité démarrée le ${fmtDate(start)}. Références proratisées indicatives pour l'année de création :
+        TVA base ${eur(proratedVatBase)} · micro ${eur(proratedMicro)}.
+        Le seuil TVA majoré de ${eur(vatMajor)} reste le seuil de bascule immédiate en cours d'année.
+      </div>` : ''}
+  `
+}
+
+function quarterBounds(date = new Date()) {
+  const q = Math.floor(date.getMonth() / 3)
+  return { startMonth: q * 3, endMonth: q * 3 + 2, quarter: q + 1 }
+}
+
+function copyValue(text, button) {
+  navigator.clipboard.writeText(text).then(() => {
+    const old = button.textContent
+    button.textContent = 'Copié'
+    setTimeout(() => button.textContent = old, 900)
+  })
+}
+
+function renderUrssaf() {
+  const now = new Date()
+  const { startMonth, endMonth, quarter } = quarterBounds(now)
+  const qSales = sales.filter(s =>
+    s.status === 'completed' &&
+    dateYear(s.sold_at) === now.getFullYear() &&
+    dateMonth(s.sold_at) >= startMonth &&
+    dateMonth(s.sold_at) <= endMonth
+  )
+
+  const ca = qSales.reduce((sum, sale) => sum + num(sale.total_ttc), 0)
+  const socialRate = num(settings.micro_social_rate)
+  const taxRate = num(settings.income_tax_rate)
+  const social = ca * socialRate / 100
+  const tax = ca * taxRate / 100
+
+  document.querySelector('#urssafBox').innerHTML = `
+    <div class="small" style="margin-bottom:8px">Trimestre ${quarter} — ${currentYear()}</div>
+    <div class="urssaf-line">
+      <div><b>Chiffre d'affaires des ventes de marchandises</b><div class="small">Régime micro-social simplifié</div></div>
+      <div class="row"><b>${eur(ca)}</b><button class="copy-btn" data-copy="${ca.toFixed(2)}">⧉</button></div>
+    </div>
+    <div class="urssaf-line">
+      <div><b>Cotisations sociales estimées</b><div class="small">${socialRate.toFixed(2)} %</div></div>
+      <div class="row"><b>${eur(social)}</b><button class="copy-btn" data-copy="${social.toFixed(2)}">⧉</button></div>
+    </div>
+    <div class="urssaf-line">
+      <div><b>Versement libératoire estimé</b><div class="small">${taxRate.toFixed(2)} % — si option applicable</div></div>
+      <div class="row"><b>${eur(tax)}</b><button class="copy-btn" data-copy="${tax.toFixed(2)}">⧉</button></div>
+    </div>
+  `
+
+  document.querySelectorAll('.copy-btn').forEach(btn => btn.onclick = () => copyValue(btn.dataset.copy, btn))
+}
+
+function renderPilotageChart(monthly) {
+  const box = document.querySelector('#pilotageChart')
+  const width = 1100
+  const height = 330
+  const pad = { left: 25, right: 25, top: 35, bottom: 45 }
+  const innerW = width - pad.left - pad.right
+  const innerH = height - pad.top - pad.bottom
+  const maxCa = Math.max(1, ...monthly.map(m => m.ca))
+  const slot = innerW / 12
+  const barW = slot * 0.48
+
+  const x = i => pad.left + slot * i + slot / 2
+  const yCa = value => pad.top + innerH - (value / maxCa) * innerH
+  const yPct = value => {
+    const clamped = Math.max(-20, Math.min(100, value))
+    return pad.top + innerH - ((clamped + 20) / 120) * innerH
+  }
+
+  const grossPoints = monthly.map(m => `${x(m.month)},${yPct(m.grossRate)}`).join(' ')
+  const netPoints = monthly.map(m => `${x(m.month)},${yPct(m.netRate)}`).join(' ')
+
+  const bars = monthly.map(m => {
+    const top = yCa(m.ca)
+    const h = pad.top + innerH - top
+    return `
+      <rect x="${x(m.month) - barW/2}" y="${top}" width="${barW}" height="${h}" rx="5" class="chart-bar"></rect>
+      <text x="${x(m.month)}" y="${Math.max(15, top - 7)}" text-anchor="middle" class="chart-ca-label">${m.ca ? Math.round(m.ca).toLocaleString('fr-FR') + ' €' : ''}</text>
+      <text x="${x(m.month)}" y="${height - 15}" text-anchor="middle" class="chart-month">${monthName(m.month)}</text>
+    `
+  }).join('')
+
+  const grossLabels = monthly.map(m =>
+    `<text x="${x(m.month)}" y="${yPct(m.grossRate) - 9}" text-anchor="middle" class="chart-gross-label">${m.ca ? m.grossRate.toFixed(0) + '%' : ''}</text>`
+  ).join('')
+
+  const netLabels = monthly.map(m =>
+    `<text x="${x(m.month)}" y="${yPct(m.netRate) + 18}" text-anchor="middle" class="chart-net-label">${m.ca ? m.netRate.toFixed(0) + '%' : ''}</text>`
+  ).join('')
+
+  box.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="CA et marges mensuels">
+      ${bars}
+      <polyline points="${grossPoints}" class="chart-line gross"></polyline>
+      <polyline points="${netPoints}" class="chart-line net"></polyline>
+      ${grossLabels}
+      ${netLabels}
+    </svg>
+  `
+}
+
+function renderTopSales() {
+  const ytdSales = sales.filter(s => saleIsYtd(s))
+  const currentMonthSales = sales.filter(s => saleIsCurrentMonth(s))
+  const ytdIds = new Set(ytdSales.map(s => s.id))
+  const monthIds = new Set(currentMonthSales.map(s => s.id))
+  const totalCa = ytdSales.reduce((sum, sale) => sum + num(sale.total_ht), 0)
+
+  const byProduct = new Map()
+
+  for (const line of saleLines.filter(l => ytdIds.has(l.sale_id))) {
+    const existing = byProduct.get(line.product_id) || { qtyYtd: 0, qtyMonth: 0, ca: 0, margin: 0 }
+    existing.qtyYtd += num(line.quantity)
+    if (monthIds.has(line.sale_id)) existing.qtyMonth += num(line.quantity)
+    existing.ca += num(line.line_total_ht)
+    existing.margin += num(line.line_total_ht) - lineCost(line)
+    byProduct.set(line.product_id, existing)
+  }
+
+  const totalMargin = [...byProduct.values()].reduce((sum, row) => sum + row.margin, 0)
+
+  const rows = [...byProduct.entries()]
+    .map(([productId, values]) => ({ productId, ...values }))
+    .sort((a, b) => b.margin - a.margin)
+    .slice(0, 12)
+
+  document.querySelector('#topSalesRows').innerHTML = rows.length ? rows.map(row => {
+    const product = products.find(p => p.id === row.productId)
+    return `
+      <tr>
+        <td><b>${esc(product?.name || 'Produit')}</b></td>
+        <td>${row.qtyMonth.toLocaleString('fr-FR')}</td>
+        <td>${row.qtyYtd.toLocaleString('fr-FR')}</td>
+        <td>${eur(row.ca)}</td>
+        <td>${totalCa ? (row.ca / totalCa * 100).toFixed(1) : '0.0'} %</td>
+        <td>${eur(row.margin)}</td>
+        <td>${totalMargin ? (row.margin / totalMargin * 100).toFixed(1) : '0.0'} %</td>
+      </tr>
+    `
+  }).join('') : '<tr><td colspan="7" class="muted">Pas encore de ventes.</td></tr>'
+}
+
+function renderLowStocks() {
+  const rows = products
+    .filter(p => p.active && num(p.stock_quantity) <= num(p.stock_alert_threshold))
+    .sort((a, b) => num(a.stock_quantity) - num(b.stock_quantity))
+
+  document.querySelector('#lowStockRows').innerHTML = rows.length ? rows.map(p => `
+    <tr>
+      <td><b>${esc(p.name)}</b></td>
+      <td class="low">${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}</td>
+      <td>${num(p.stock_alert_threshold).toLocaleString('fr-FR')} ${esc(p.stock_unit)}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="3" class="muted">Aucun produit sous le seuil.</td></tr>'
+}
+
+function renderManagementTable(monthly) {
+  const throughMonth = monthly.slice(0, currentMonth() + 1)
+  const cumulative = throughMonth.reduce((acc, m) => ({
+    ca: acc.ca + m.ca,
+    caHt: acc.caHt + m.caHt,
+    cost: acc.cost + m.cost,
+    grossMargin: acc.grossMargin + m.grossMargin,
+    expenses: acc.expenses + m.expenses,
+    social: acc.social + m.social,
+    incomeTax: acc.incomeTax + m.incomeTax,
+    net: acc.net + m.net
+  }), { ca:0, caHt:0, cost:0, grossMargin:0, expenses:0, social:0, incomeTax:0, net:0 })
+
+  const rows = throughMonth.map(m => `
+    <tr>
+      <td>${monthLong(m.month)}</td>
+      <td>${eur(m.ca)}</td>
+      <td>${eur(m.cost)}</td>
+      <td>${eur(m.grossMargin)}</td>
+      <td>${m.grossRate.toFixed(1)} %</td>
+      <td>${eur(m.expenses)}</td>
+      <td>${eur(m.social)}</td>
+      <td>${eur(m.incomeTax)}</td>
+      <td><b>${eur(m.net)}</b></td>
+      <td>${m.netRate.toFixed(1)} %</td>
+    </tr>
+  `).join('')
+
+  const grossRate = cumulative.caHt ? cumulative.grossMargin / cumulative.caHt * 100 : 0
+  const netRate = cumulative.ca ? cumulative.net / cumulative.ca * 100 : 0
+
+  document.querySelector('#managementRows').innerHTML = rows + `
+    <tr class="total-row">
+      <td><b>Cumul ${currentYear()}</b></td>
+      <td><b>${eur(cumulative.ca)}</b></td>
+      <td><b>${eur(cumulative.cost)}</b></td>
+      <td><b>${eur(cumulative.grossMargin)}</b></td>
+      <td><b>${grossRate.toFixed(1)} %</b></td>
+      <td><b>${eur(cumulative.expenses)}</b></td>
+      <td><b>${eur(cumulative.social)}</b></td>
+      <td><b>${eur(cumulative.incomeTax)}</b></td>
+      <td><b>${eur(cumulative.net)}</b></td>
+      <td><b>${netRate.toFixed(1)} %</b></td>
+    </tr>
+  `
+}
+
+function renderExpenses() {
+  const body = document.querySelector('#expenseRows')
+  if (!body) return
+
+  const current = managementExpenses
+    .filter(e => dateYear(e.expense_date) === currentYear())
+    .slice(0, 30)
+
+  body.innerHTML = current.length ? current.map(e => `
+    <tr>
+      <td>${fmtDate(e.expense_date)}</td>
+      <td>${esc(e.label)}</td>
+      <td>${eur(e.amount)}</td>
+      <td><button class="danger delete-expense-btn" data-id="${e.id}">×</button></td>
+    </tr>
+  `).join('') : '<tr><td colspan="4" class="muted">Aucune dépense saisie.</td></tr>'
+
+  document.querySelectorAll('.delete-expense-btn').forEach(btn => btn.onclick = () => deleteManagementExpense(btn.dataset.id))
+}
+
+async function addManagementExpense() {
+  const msg = document.querySelector('#expenseMsg')
+  const date = document.querySelector('#expenseDate').value || new Date().toISOString().slice(0,10)
+  const amount = Number(document.querySelector('#expenseAmount').value || 0)
+  const label = document.querySelector('#expenseLabel').value.trim()
+
+  if (!label) return msg.textContent = 'Libellé obligatoire.'
+  if (!(amount > 0)) return msg.textContent = 'Montant invalide.'
+
+  msg.textContent = 'Enregistrement…'
+  const { error } = await supabase.from('management_expenses').insert({
+    organization_id: organizationId,
+    expense_date: date,
+    label,
+    amount
+  })
+
+  if (error) return msg.textContent = 'Erreur : ' + error.message
+
+  document.querySelector('#expenseAmount').value = ''
+  document.querySelector('#expenseLabel').value = ''
+  msg.textContent = ''
+  await loadData()
+}
+
+async function deleteManagementExpense(id) {
+  if (!confirm('Supprimer cette dépense du pilotage ?')) return
+  const { error } = await supabase.from('management_expenses').delete().eq('id', id)
+  if (error) return alert(error.message)
+  await loadData()
+}
+
+function fillPilotageSettings() {
+  document.querySelector('#settingActivityStart').value = settings.activity_start_date || ''
+  document.querySelector('#settingSocialRate').value = num(settings.micro_social_rate)
+  document.querySelector('#settingTaxRate').value = num(settings.income_tax_rate)
+  document.querySelector('#settingVatBase').value = num(settings.vat_base_threshold)
+  document.querySelector('#settingVatMajor').value = num(settings.vat_major_threshold)
+  document.querySelector('#settingMicroThreshold').value = num(settings.micro_threshold)
+
+  const dateInput = document.querySelector('#expenseDate')
+  if (!dateInput.value) dateInput.value = new Date().toISOString().slice(0,10)
+}
+
+async function savePilotageSettings() {
+  const msg = document.querySelector('#settingsMsg')
+  msg.textContent = 'Enregistrement…'
+
+  const { error } = await supabase.rpc('update_pilotage_settings', {
+    p_activity_start_date: document.querySelector('#settingActivityStart').value || null,
+    p_micro_social_rate: Number(document.querySelector('#settingSocialRate').value || 0),
+    p_income_tax_rate: Number(document.querySelector('#settingTaxRate').value || 0),
+    p_vat_base_threshold: Number(document.querySelector('#settingVatBase').value || 0),
+    p_vat_major_threshold: Number(document.querySelector('#settingVatMajor').value || 0),
+    p_micro_threshold: Number(document.querySelector('#settingMicroThreshold').value || 0)
+  })
+
+  if (error) return msg.textContent = 'Erreur : ' + error.message
+
+  msg.textContent = 'Paramètres enregistrés.'
+  await loadData()
 }
 
 init()
