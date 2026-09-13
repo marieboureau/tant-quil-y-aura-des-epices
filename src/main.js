@@ -18,6 +18,11 @@ let selectedCustomer = null
 let paymentMode = 'card'
 let pendingImport = null
 let managementExpenses = []
+let cashClosings = []
+let bankTransactions = []
+let bankRules = []
+let forecastEvents = []
+let pendingBankImport = null
 
 const eur = value => Number(value || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
 const num = value => Number(value || 0)
@@ -82,10 +87,11 @@ function renderShell() {
         <div class="sub">V1 réelle — Sprint 2.1</div>
         <nav>
           <button class="active" data-tab="sell">Vendre</button>
+          <button data-tab="history">Historique</button>
           <button data-tab="products">Produits</button>
           <button data-tab="clients">Clients</button>
-          <button data-tab="history">Historique</button>
           <button data-tab="pilotage">Pilotage</button>
+          <button data-tab="treasury">Caisse & trésorerie</button>
         </nav>
       </aside>
 
@@ -374,6 +380,122 @@ function renderShell() {
           </div>
         </section>
 
+        <section id="treasury" class="section">
+          <div class="top">
+            <div>
+              <h1>Caisse & trésorerie</h1>
+              <div class="muted">Clôture quotidienne, banque, rapprochement CB et prévision.</div>
+            </div>
+            <button id="refreshTreasuryBtn" class="secondary">Actualiser</button>
+          </div>
+
+          <div id="treasuryKpis" class="kpi-grid"></div>
+
+          <div class="grid pilotage-grid" style="margin-top:14px">
+            <div class="card">
+              <h2>Clôture de caisse</h2>
+              <label class="small">Date</label>
+              <input id="closingDate" class="field" type="date">
+              <div id="closingExpected" class="notice" style="margin-top:8px"></div>
+              <label class="small" style="display:block;margin-top:10px">Espèces comptées</label>
+              <input id="cashCounted" class="field" type="number" step="0.01" min="0" placeholder="0,00">
+              <label class="small" style="display:block;margin-top:10px">Note</label>
+              <input id="closingNote" class="field" placeholder="Facultatif">
+              <button id="saveClosingBtn" class="primary" style="margin-top:10px">Enregistrer la clôture</button>
+              <div id="closingMsg" class="small" style="margin-top:6px"></div>
+              <div class="table-wrap" style="margin-top:12px">
+                <table>
+                  <thead><tr><th>Date</th><th>CB</th><th>Espèces th.</th><th>Espèces comptées</th><th>Écart</th></tr></thead>
+                  <tbody id="closingRows"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2>Solde bancaire de départ</h2>
+              <div class="small">Indique le solde réellement disponible aujourd'hui. Il sert de point de départ aux prévisions.</div>
+              <input id="currentBankBalance" class="field" type="number" step="0.01" style="margin-top:10px">
+              <button id="saveBankBalanceBtn" class="primary" style="margin-top:8px">Enregistrer le solde</button>
+              <div id="bankBalanceMsg" class="small" style="margin-top:6px"></div>
+
+              <h2 style="margin-top:22px">Prévision 30 / 60 / 90 jours</h2>
+              <div id="forecastBars"></div>
+              <div id="forecastLowPoint" class="notice" style="margin-top:10px"></div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:14px">
+            <div class="top compact-top">
+              <div>
+                <h2>Import bancaire CSV</h2>
+                <div class="small">V1 gratuite : import du relevé bancaire, catégorisation automatique simple puis correction manuelle.</div>
+              </div>
+              <label class="secondary file-btn">Importer un CSV<input id="bankCsvInput" type="file" accept=".csv,text/csv"></label>
+            </div>
+            <div id="bankImportSummary" class="notice" style="display:none"></div>
+            <div class="table-wrap" style="margin-top:10px">
+              <table>
+                <thead><tr><th>Date</th><th>Libellé</th><th>Montant</th><th>Catégorie</th><th>Action</th></tr></thead>
+                <tbody id="bankRows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="grid pilotage-grid" style="margin-top:14px">
+            <div class="card">
+              <h2>Rapprochement CB</h2>
+              <div class="small">Comparaison des encaissements CB théoriques avec les crédits bancaires catégorisés « Encaissement CB ». Tolérance de délai : 3 jours.</div>
+              <div class="table-wrap" style="margin-top:10px">
+                <table>
+                  <thead><tr><th>Date ventes</th><th>CB théorique</th><th>Crédit bancaire rapproché</th><th>Écart</th><th>Statut</th></tr></thead>
+                  <tbody id="cardReconRows"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2>Règles de catégorisation</h2>
+              <div class="grid">
+                <input id="ruleKeyword" class="field" placeholder="Mot-clé du libellé">
+                <input id="ruleCategory" class="field" placeholder="Catégorie">
+              </div>
+              <button id="addBankRuleBtn" class="primary" style="margin-top:8px">Ajouter la règle</button>
+              <div id="ruleMsg" class="small" style="margin-top:6px"></div>
+              <div class="table-wrap" style="margin-top:10px">
+                <table>
+                  <thead><tr><th>Mot-clé</th><th>Catégorie</th><th></th></tr></thead>
+                  <tbody id="bankRuleRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:14px">
+            <h2>Événements de trésorerie à venir</h2>
+            <div class="treasury-event-form">
+              <input id="forecastDate" class="field" type="date">
+              <input id="forecastLabel" class="field" placeholder="Ex. URSSAF, loyer, fournisseur">
+              <input id="forecastAmount" class="field" type="number" min="0" step="0.01" placeholder="Montant €">
+              <select id="forecastType" class="field">
+                <option value="expense">Décaissement</option>
+                <option value="income">Encaissement</option>
+              </select>
+              <select id="forecastRecurrence" class="field">
+                <option value="">Ponctuel</option>
+                <option value="monthly">Mensuel</option>
+              </select>
+              <button id="addForecastEventBtn" class="primary">Ajouter</button>
+            </div>
+            <div id="forecastEventMsg" class="small" style="margin-top:6px"></div>
+            <div class="table-wrap" style="margin-top:10px">
+              <table>
+                <thead><tr><th>Date</th><th>Événement</th><th>Type</th><th>Montant</th><th>Récurrence</th><th></th></tr></thead>
+                <tbody id="forecastEventRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
       </main>
     </div>
 
@@ -511,6 +633,13 @@ function bindEvents() {
   document.querySelector('#refreshPilotageBtn').onclick = loadData
   document.querySelector('#addExpenseBtn').onclick = addManagementExpense
   document.querySelector('#savePilotageSettingsBtn').onclick = savePilotageSettings
+  document.querySelector('#refreshTreasuryBtn').onclick = loadData
+  document.querySelector('#closingDate').onchange = renderClosingExpected
+  document.querySelector('#saveClosingBtn').onclick = saveCashClosing
+  document.querySelector('#saveBankBalanceBtn').onclick = saveBankBalance
+  document.querySelector('#bankCsvInput').onchange = event => importBankCsv(event.target.files?.[0])
+  document.querySelector('#addBankRuleBtn').onclick = addBankRule
+  document.querySelector('#addForecastEventBtn').onclick = addForecastEvent
 }
 
 function switchTab(btn) {
@@ -527,7 +656,8 @@ async function loadData() {
 
   const [
     categoriesRes, productsRes, customersRes, settingsRes,
-    loyaltyRes, salesRes, linesRes, paymentsRes, expensesRes
+    loyaltyRes, salesRes, linesRes, paymentsRes, expensesRes,
+    closingsRes, bankRes, rulesRes, forecastRes
   ] = await Promise.all([
     supabase.from('product_categories').select('id,name,active,sort_order').order('sort_order'),
     supabase.from('products').select('*').order('name'),
@@ -537,12 +667,17 @@ async function loadData() {
     supabase.from('sales').select('*').order('sold_at', { ascending: false }).limit(5000),
     supabase.from('sale_lines').select('*').limit(50000),
     supabase.from('payments').select('*').order('paid_at', { ascending: false }).limit(50000),
-    supabase.from('management_expenses').select('*').order('expense_date', { ascending: false }).limit(5000)
+    supabase.from('management_expenses').select('*').order('expense_date', { ascending: false }).limit(5000),
+    supabase.from('cash_closings').select('*').order('closing_date', { ascending: false }).limit(500),
+    supabase.from('bank_transactions').select('*').order('transaction_date', { ascending: false }).limit(5000),
+    supabase.from('bank_category_rules').select('*').eq('active', true).order('priority').limit(500),
+    supabase.from('forecast_events').select('*').eq('active', true).order('event_date').limit(1000)
   ])
 
   const error = [
     categoriesRes.error, productsRes.error, customersRes.error, settingsRes.error,
-    loyaltyRes.error, salesRes.error, linesRes.error, paymentsRes.error, expensesRes.error
+    loyaltyRes.error, salesRes.error, linesRes.error, paymentsRes.error, expensesRes.error,
+    closingsRes.error, bankRes.error, rulesRes.error, forecastRes.error
   ].find(Boolean)
 
   if (error) return showGlobalError(error.message)
@@ -556,6 +691,10 @@ async function loadData() {
   saleLines = linesRes.data || []
   payments = paymentsRes.data || []
   managementExpenses = expensesRes.data || []
+  cashClosings = closingsRes.data || []
+  bankTransactions = bankRes.data || []
+  bankRules = rulesRes.data || []
+  forecastEvents = forecastRes.data || []
 
   renderAll()
 }
@@ -569,6 +708,7 @@ function renderAll() {
   renderSaleLines()
   renderPayments()
   renderPilotage()
+  renderTreasury()
 }
 
 function showGlobalError(message) {
@@ -1896,6 +2036,517 @@ async function savePilotageSettings() {
   if (error) return msg.textContent = 'Erreur : ' + error.message
 
   msg.textContent = 'Paramètres enregistrés.'
+  await loadData()
+}
+
+
+// =========================================================
+// SPRINT 4 — CAISSE & TRÉSORERIE
+// =========================================================
+
+function isoDate(value) {
+  return new Date(value).toISOString().slice(0,10)
+}
+
+function localDateKey(value) {
+  const d = new Date(value)
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
+function paymentsForDate(date) {
+  const saleIds = new Set(
+    sales.filter(s => s.status === 'completed' && localDateKey(s.sold_at) === date).map(s => s.id)
+  )
+  return payments.filter(p => saleIds.has(p.sale_id) && (p.status || 'completed') === 'completed')
+}
+
+function expectedByMethod(date) {
+  const rows = paymentsForDate(date)
+  const sum = method => rows
+    .filter(p => p.payment_method === method)
+    .reduce((acc,p) => acc + num(p.amount), 0)
+  return {
+    card: sum('card'),
+    cash: sum('cash'),
+    cheque: sum('cheque')
+  }
+}
+
+function renderTreasury() {
+  const section = document.querySelector('#treasury')
+  if (!section || !settings) return
+
+  const today = new Date().toISOString().slice(0,10)
+  const closingDate = document.querySelector('#closingDate')
+  if (closingDate && !closingDate.value) closingDate.value = today
+
+  const forecastDate = document.querySelector('#forecastDate')
+  if (forecastDate && !forecastDate.value) forecastDate.value = today
+
+  const todayExpected = expectedByMethod(today)
+  const latestClosing = cashClosings[0]
+  const currentBalance = num(settings.current_bank_balance)
+  const forecast = treasuryForecast()
+
+  document.querySelector('#treasuryKpis').innerHTML = `
+    <div class="card kpi"><div class="muted">CB théorique aujourd'hui</div><div class="kpi-value">${eur(todayExpected.card)}</div></div>
+    <div class="card kpi"><div class="muted">Espèces théoriques aujourd'hui</div><div class="kpi-value">${eur(todayExpected.cash)}</div></div>
+    <div class="card kpi"><div class="muted">Solde bancaire saisi</div><div class="kpi-value">${eur(currentBalance)}</div></div>
+    <div class="card kpi"><div class="muted">Prévision J+30</div><div class="kpi-value">${eur(forecast.d30)}</div></div>
+  `
+
+  document.querySelector('#currentBankBalance').value = currentBalance.toFixed(2)
+  renderClosingExpected()
+  renderClosings()
+  renderBankTransactions()
+  renderCardReconciliation()
+  renderBankRules()
+  renderForecastEvents()
+  renderForecastBars(forecast)
+}
+
+function renderClosingExpected() {
+  const date = document.querySelector('#closingDate')?.value
+  const box = document.querySelector('#closingExpected')
+  if (!date || !box) return
+  const expected = expectedByMethod(date)
+  const existing = cashClosings.find(c => c.closing_date === date)
+  box.innerHTML = `
+    <div class="row space"><span>CB théorique</span><b>${eur(expected.card)}</b></div>
+    <div class="row space"><span>Espèces théoriques</span><b>${eur(expected.cash)}</b></div>
+    <div class="row space"><span>Chèques</span><b>${eur(expected.cheque)}</b></div>
+    ${existing ? `<div class="small" style="margin-top:5px">Une clôture existe déjà pour cette date : elle sera mise à jour.</div>` : ''}
+  `
+  if (existing && document.querySelector('#cashCounted')) {
+    document.querySelector('#cashCounted').value = num(existing.cash_counted).toFixed(2)
+    document.querySelector('#closingNote').value = existing.note || ''
+  }
+}
+
+async function saveCashClosing() {
+  const msg = document.querySelector('#closingMsg')
+  const date = document.querySelector('#closingDate').value
+  const cashCounted = Number(document.querySelector('#cashCounted').value || 0)
+  const note = document.querySelector('#closingNote').value.trim() || null
+  const expected = expectedByMethod(date)
+
+  msg.textContent = 'Enregistrement…'
+
+  const payload = {
+    organization_id: organizationId,
+    closing_date: date,
+    card_total_expected: expected.card,
+    cash_total_expected: expected.cash,
+    cheque_total_expected: expected.cheque,
+    cash_counted: cashCounted,
+    cash_variance: Number((cashCounted - expected.cash).toFixed(2)),
+    note
+  }
+
+  const existing = cashClosings.find(c => c.closing_date === date)
+  const query = existing
+    ? supabase.from('cash_closings').update(payload).eq('id', existing.id)
+    : supabase.from('cash_closings').insert(payload)
+
+  const { error } = await query
+  if (error) return msg.textContent = 'Erreur : ' + error.message
+
+  msg.textContent = 'Clôture enregistrée.'
+  await loadData()
+}
+
+function renderClosings() {
+  const body = document.querySelector('#closingRows')
+  if (!body) return
+  body.innerHTML = cashClosings.slice(0,20).map(c => `
+    <tr>
+      <td>${fmtDate(c.closing_date)}</td>
+      <td>${eur(c.card_total_expected)}</td>
+      <td>${eur(c.cash_total_expected)}</td>
+      <td>${eur(c.cash_counted)}</td>
+      <td class="${Math.abs(num(c.cash_variance)) > 0.01 ? 'low' : ''}">${eur(c.cash_variance)}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" class="muted">Aucune clôture enregistrée.</td></tr>'
+}
+
+async function saveBankBalance() {
+  const msg = document.querySelector('#bankBalanceMsg')
+  msg.textContent = 'Enregistrement…'
+  const { error } = await supabase.rpc('update_treasury_settings', {
+    p_current_bank_balance: Number(document.querySelector('#currentBankBalance').value || 0)
+  })
+  if (error) return msg.textContent = 'Erreur : ' + error.message
+  msg.textContent = 'Solde enregistré.'
+  await loadData()
+}
+
+function autoCategory(label) {
+  const value = String(label || '').toLowerCase()
+  const rule = bankRules
+    .filter(r => r.active !== false)
+    .sort((a,b) => num(a.priority) - num(b.priority))
+    .find(r => value.includes(String(r.keyword || '').toLowerCase()))
+  return rule?.category || ''
+}
+
+function normalizeBankRow(row) {
+  const aliases = key => {
+    const map = {
+      date: ['date','date_operation','date operation','dateop','date de l operation','date opération','operation_date'],
+      valueDate: ['date_valeur','date valeur','value_date'],
+      label: ['libelle','libellé','label','description','operation','opération'],
+      amount: ['montant','amount','net','somme'],
+      debit: ['debit','débit'],
+      credit: ['credit','crédit']
+    }
+    const entries = Object.entries(row)
+    for (const alias of map[key]) {
+      const hit = entries.find(([k]) => k.trim().toLowerCase() === alias)
+      if (hit) return hit[1]
+    }
+    return ''
+  }
+
+  let amount = parseNumber(aliases('amount'), NaN)
+  if (!Number.isFinite(amount)) {
+    const debit = parseNumber(aliases('debit'), 0)
+    const credit = parseNumber(aliases('credit'), 0)
+    amount = credit - debit
+  }
+
+  const rawDate = String(aliases('date')).trim()
+  const parts = rawDate.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/)
+  const date = parts
+    ? `${parts[3].length === 2 ? '20'+parts[3] : parts[3]}-${parts[2].padStart(2,'0')}-${parts[1].padStart(2,'0')}`
+    : rawDate.slice(0,10)
+
+  const label = String(aliases('label')).trim()
+  return {
+    transaction_date: date,
+    value_date: String(aliases('valueDate') || '').trim() || null,
+    label,
+    amount,
+    category: autoCategory(label),
+    source: 'csv'
+  }
+}
+
+async function importBankCsv(file) {
+  if (!file) return
+  const summary = document.querySelector('#bankImportSummary')
+  summary.style.display = 'block'
+  summary.textContent = 'Lecture du fichier…'
+
+  try {
+    const rows = parseCsv(await file.text()).map(normalizeBankRow)
+      .filter(r => r.transaction_date && r.label && Number.isFinite(r.amount))
+
+    if (!rows.length) throw new Error('Aucune ligne bancaire exploitable détectée.')
+
+    // Déduplication simple : date + libellé + montant
+    const existingKeys = new Set(bankTransactions.map(t =>
+      `${t.transaction_date}|${String(t.label).trim().toLowerCase()}|${num(t.amount).toFixed(2)}`
+    ))
+
+    const uniqueRows = rows.filter(r => !existingKeys.has(
+      `${r.transaction_date}|${r.label.trim().toLowerCase()}|${num(r.amount).toFixed(2)}`
+    ))
+
+    if (!uniqueRows.length) {
+      summary.textContent = `${rows.length} ligne(s) lue(s), aucune nouvelle transaction à importer.`
+      document.querySelector('#bankCsvInput').value = ''
+      return
+    }
+
+    const payload = uniqueRows.map(r => ({ ...r, organization_id: organizationId }))
+    const { error } = await supabase.from('bank_transactions').insert(payload)
+    if (error) throw error
+
+    summary.textContent = `${rows.length} ligne(s) lue(s) · ${uniqueRows.length} nouvelle(s) transaction(s) importée(s) · ${rows.length - uniqueRows.length} doublon(s) ignoré(s).`
+    document.querySelector('#bankCsvInput').value = ''
+    await loadData()
+  } catch (error) {
+    summary.textContent = 'Erreur import : ' + error.message
+  }
+}
+
+function renderBankTransactions() {
+  const body = document.querySelector('#bankRows')
+  if (!body) return
+
+  body.innerHTML = bankTransactions.slice(0,100).map(t => `
+    <tr>
+      <td>${fmtDate(t.transaction_date)}</td>
+      <td>${esc(t.label)}</td>
+      <td class="${num(t.amount) < 0 ? 'low' : ''}">${eur(t.amount)}</td>
+      <td>
+        <input class="field compact bank-cat-input" data-id="${t.id}" value="${esc(t.category || '')}" placeholder="À catégoriser">
+      </td>
+      <td><button class="secondary save-bank-cat" data-id="${t.id}">Enregistrer</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" class="muted">Aucune transaction bancaire importée.</td></tr>'
+
+  document.querySelectorAll('.save-bank-cat').forEach(btn => btn.onclick = async () => {
+    const input = document.querySelector(`.bank-cat-input[data-id="${btn.dataset.id}"]`)
+    const { error } = await supabase.from('bank_transactions')
+      .update({ category: input.value.trim() || null })
+      .eq('id', btn.dataset.id)
+    if (error) return alert(error.message)
+    await loadData()
+  })
+}
+
+function cardExpectedByDay() {
+  const map = new Map()
+  for (const p of payments.filter(p => p.payment_method === 'card' && (p.status || 'completed') === 'completed')) {
+    const sale = saleById(p.sale_id)
+    if (!sale || sale.status !== 'completed') continue
+    const date = localDateKey(sale.sold_at)
+    map.set(date, (map.get(date) || 0) + num(p.amount))
+  }
+  return [...map.entries()]
+    .map(([date, amount]) => ({ date, amount }))
+    .sort((a,b) => b.date.localeCompare(a.date))
+}
+
+function renderCardReconciliation() {
+  const body = document.querySelector('#cardReconRows')
+  if (!body) return
+
+  const bankCredits = bankTransactions
+    .filter(t => t.category === 'Encaissement CB' && num(t.amount) > 0)
+    .map(t => ({ ...t, used: false }))
+    .sort((a,b) => a.transaction_date.localeCompare(b.transaction_date))
+
+  const expected = cardExpectedByDay().slice(0,40)
+  const rows = expected.map(day => {
+    const saleDate = new Date(day.date + 'T00:00:00')
+    let best = null
+
+    for (const tx of bankCredits) {
+      if (tx.used) continue
+      const txDate = new Date(tx.transaction_date + 'T00:00:00')
+      const diffDays = Math.round((txDate - saleDate) / 86400000)
+      if (diffDays < 0 || diffDays > 3) continue
+      const diffAmount = Math.abs(num(tx.amount) - day.amount)
+      if (!best || diffAmount < best.diffAmount) best = { tx, diffAmount, diffDays }
+    }
+
+    if (best && best.diffAmount <= Math.max(0.02, day.amount * 0.01)) best.tx.used = true
+
+    const received = best && best.diffAmount <= Math.max(0.02, day.amount * 0.01) ? num(best.tx.amount) : 0
+    const variance = received - day.amount
+    const ok = received > 0 && Math.abs(variance) <= Math.max(0.02, day.amount * 0.01)
+
+    return `
+      <tr>
+        <td>${fmtDate(day.date)}</td>
+        <td>${eur(day.amount)}</td>
+        <td>${received ? eur(received) : '—'}</td>
+        <td class="${ok ? '' : 'low'}">${received ? eur(variance) : eur(-day.amount)}</td>
+        <td><span class="status ${ok ? 'ok' : 'off'}">${ok ? 'Rapproché' : 'À vérifier'}</span></td>
+      </tr>
+    `
+  })
+
+  body.innerHTML = rows.join('') || '<tr><td colspan="5" class="muted">Aucun encaissement CB à rapprocher.</td></tr>'
+}
+
+function renderBankRules() {
+  const body = document.querySelector('#bankRuleRows')
+  if (!body) return
+  body.innerHTML = bankRules.map(r => `
+    <tr>
+      <td>${esc(r.keyword)}</td>
+      <td>${esc(r.category)}</td>
+      <td><button class="danger delete-rule-btn" data-id="${r.id}">×</button></td>
+    </tr>
+  `).join('')
+
+  document.querySelectorAll('.delete-rule-btn').forEach(btn => btn.onclick = async () => {
+    const { error } = await supabase.from('bank_category_rules').delete().eq('id', btn.dataset.id)
+    if (error) return alert(error.message)
+    await loadData()
+  })
+}
+
+async function addBankRule() {
+  const msg = document.querySelector('#ruleMsg')
+  const keyword = document.querySelector('#ruleKeyword').value.trim()
+  const category = document.querySelector('#ruleCategory').value.trim()
+  if (!keyword || !category) return msg.textContent = 'Mot-clé et catégorie obligatoires.'
+
+  const { error } = await supabase.from('bank_category_rules').insert({
+    organization_id: organizationId,
+    keyword,
+    category
+  })
+  if (error) return msg.textContent = 'Erreur : ' + error.message
+
+  document.querySelector('#ruleKeyword').value = ''
+  document.querySelector('#ruleCategory').value = ''
+  msg.textContent = ''
+  await loadData()
+}
+
+function futureEventOccurrences(daysAhead) {
+  const now = new Date()
+  now.setHours(0,0,0,0)
+  const end = new Date(now)
+  end.setDate(end.getDate() + daysAhead)
+  const occurrences = []
+
+  for (const e of forecastEvents.filter(e => e.active !== false)) {
+    const first = new Date(e.event_date + 'T00:00:00')
+    if (e.recurrence === 'monthly') {
+      let d = new Date(first)
+      while (d < now) d.setMonth(d.getMonth() + 1)
+      while (d <= end) {
+        occurrences.push({ date: new Date(d), amount: num(e.amount), type: e.event_type, label: e.label })
+        d.setMonth(d.getMonth() + 1)
+      }
+    } else if (first >= now && first <= end) {
+      occurrences.push({ date:first, amount:num(e.amount), type:e.event_type, label:e.label })
+    }
+  }
+  return occurrences
+}
+
+function recentDailySalesAverage() {
+  const now = new Date()
+  const start = new Date(now)
+  start.setDate(start.getDate() - 60)
+
+  const relevant = sales.filter(s =>
+    s.status === 'completed' &&
+    new Date(s.sold_at) >= start &&
+    new Date(s.sold_at) <= now
+  )
+  const total = relevant.reduce((sum,s) => sum + num(s.total_ttc), 0)
+  return total / 60
+}
+
+function seasonalityFactor(targetDate) {
+  const targetMonth = targetDate.getMonth()
+  const years = [...new Set(sales.map(s => dateYear(s.sold_at)))]
+  const monthTotals = new Map()
+
+  for (const s of sales.filter(s => s.status === 'completed')) {
+    const key = `${dateYear(s.sold_at)}-${dateMonth(s.sold_at)}`
+    monthTotals.set(key, (monthTotals.get(key) || 0) + num(s.total_ttc))
+  }
+
+  const targetValues = years.map(y => monthTotals.get(`${y}-${targetMonth}`) || 0).filter(v => v > 0)
+  const allValues = [...monthTotals.values()].filter(v => v > 0)
+
+  if (targetValues.length && allValues.length >= 3) {
+    const targetAvg = targetValues.reduce((a,b)=>a+b,0) / targetValues.length
+    const globalAvg = allValues.reduce((a,b)=>a+b,0) / allValues.length
+    return globalAvg ? Math.max(0.4, Math.min(2.5, targetAvg / globalAvg)) : 1
+  }
+  return 1
+}
+
+function treasuryForecast() {
+  const startBalance = num(settings.current_bank_balance)
+  const dailyBase = recentDailySalesAverage()
+
+  const calc = days => {
+    const now = new Date()
+    let salesForecast = 0
+    for (let i=1;i<=days;i++) {
+      const d = new Date(now)
+      d.setDate(d.getDate()+i)
+      salesForecast += dailyBase * seasonalityFactor(d)
+    }
+
+    const events = futureEventOccurrences(days)
+    const eventNet = events.reduce((sum,e) => sum + (e.type === 'income' ? e.amount : -e.amount), 0)
+    return startBalance + salesForecast + eventNet
+  }
+
+  const balances = []
+  for (let d=1; d<=90; d++) balances.push(calc(d))
+  const low = balances.length ? Math.min(...balances) : startBalance
+  const lowDay = balances.indexOf(low) + 1
+
+  return {
+    d30: calc(30),
+    d60: calc(60),
+    d90: calc(90),
+    low,
+    lowDay,
+    dailyBase
+  }
+}
+
+function renderForecastBars(forecast) {
+  const values = [
+    { label:'Aujourd’hui', value:num(settings.current_bank_balance) },
+    { label:'J+30', value:forecast.d30 },
+    { label:'J+60', value:forecast.d60 },
+    { label:'J+90', value:forecast.d90 }
+  ]
+  const maxAbs = Math.max(1, ...values.map(v => Math.abs(v.value)))
+
+  document.querySelector('#forecastBars').innerHTML = values.map(v => `
+    <div class="forecast-row">
+      <span>${v.label}</span>
+      <div class="forecast-track"><span class="${v.value < 0 ? 'negative' : ''}" style="width:${Math.max(3, Math.abs(v.value)/maxAbs*100)}%"></span></div>
+      <b>${eur(v.value)}</b>
+    </div>
+  `).join('')
+
+  document.querySelector('#forecastLowPoint').innerHTML = `
+    Point bas estimé sur 90 jours : <b>${eur(forecast.low)}</b> vers J+${forecast.lowDay}.
+    <div class="small">Prévision basée sur le CA récent, la saisonnalité disponible et les événements saisis. Elle deviendra plus fiable avec l'historique.</div>
+  `
+}
+
+function renderForecastEvents() {
+  const body = document.querySelector('#forecastEventRows')
+  if (!body) return
+  body.innerHTML = forecastEvents.map(e => `
+    <tr>
+      <td>${fmtDate(e.event_date)}</td>
+      <td>${esc(e.label)}</td>
+      <td>${e.event_type === 'income' ? 'Encaissement' : 'Décaissement'}</td>
+      <td>${eur(e.amount)}</td>
+      <td>${e.recurrence === 'monthly' ? 'Mensuel' : 'Ponctuel'}</td>
+      <td><button class="danger delete-forecast-btn" data-id="${e.id}">×</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="6" class="muted">Aucun événement futur saisi.</td></tr>'
+
+  document.querySelectorAll('.delete-forecast-btn').forEach(btn => btn.onclick = async () => {
+    const { error } = await supabase.from('forecast_events').delete().eq('id', btn.dataset.id)
+    if (error) return alert(error.message)
+    await loadData()
+  })
+}
+
+async function addForecastEvent() {
+  const msg = document.querySelector('#forecastEventMsg')
+  const date = document.querySelector('#forecastDate').value
+  const label = document.querySelector('#forecastLabel').value.trim()
+  const amount = Number(document.querySelector('#forecastAmount').value || 0)
+  const eventType = document.querySelector('#forecastType').value
+  const recurrence = document.querySelector('#forecastRecurrence').value || null
+
+  if (!date || !label || !(amount > 0)) return msg.textContent = 'Date, libellé et montant obligatoires.'
+
+  const { error } = await supabase.from('forecast_events').insert({
+    organization_id: organizationId,
+    event_date: date,
+    label,
+    amount,
+    event_type: eventType,
+    recurrence
+  })
+  if (error) return msg.textContent = 'Erreur : ' + error.message
+
+  document.querySelector('#forecastLabel').value = ''
+  document.querySelector('#forecastAmount').value = ''
+  msg.textContent = ''
   await loadData()
 }
 
