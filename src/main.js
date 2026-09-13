@@ -23,6 +23,9 @@ let bankTransactions = []
 let bankRules = []
 let forecastEvents = []
 let pendingBankImport = null
+let offlineSnapshot = null
+let offlineQueue = []
+let installPrompt = null
 
 const eur = value => Number(value || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
 const num = value => Number(value || 0)
@@ -92,6 +95,7 @@ function renderShell() {
           <button data-tab="clients">Clients</button>
           <button data-tab="pilotage">Pilotage</button>
           <button data-tab="treasury">Caisse & trésorerie</button>
+          <button data-tab="backup">Sauvegarde & appareil</button>
         </nav>
       </aside>
 
@@ -496,6 +500,102 @@ function renderShell() {
           </div>
         </section>
 
+        <section id="backup" class="section">
+          <div class="top">
+            <div>
+              <h1>Sauvegarde & appareil</h1>
+              <div class="muted">Installation tablette, fonctionnement hors ligne et sauvegarde complète.</div>
+            </div>
+            <button id="refreshBackupBtn" class="secondary">Actualiser</button>
+          </div>
+
+          <div class="kpi-grid">
+            <div class="card kpi">
+              <div class="muted">Connexion</div>
+              <div id="connectionStatus" class="kpi-value">—</div>
+            </div>
+            <div class="card kpi">
+              <div class="muted">Ventes en attente de synchro</div>
+              <div id="offlineQueueCount" class="kpi-value">0</div>
+            </div>
+            <div class="card kpi">
+              <div class="muted">Dernière sauvegarde locale</div>
+              <div id="lastBackupLabel" class="kpi-value smallish">Jamais</div>
+            </div>
+            <div class="card kpi">
+              <div class="muted">Dernière synchro</div>
+              <div id="lastSyncLabel" class="kpi-value smallish">—</div>
+            </div>
+          </div>
+
+          <div class="grid pilotage-grid" style="margin-top:14px">
+            <div class="card">
+              <h2>Installer sur la tablette</h2>
+              <p class="muted">
+                L'application peut être installée comme une application classique depuis Chrome/Edge.
+                Elle s'ouvrira en plein écran depuis l'écran d'accueil.
+              </p>
+              <button id="installAppBtn" class="primary">Installer l'application</button>
+              <div id="installMsg" class="small" style="margin-top:8px"></div>
+              <div class="notice" style="margin-top:12px">
+                Si le bouton n'est pas disponible, utilise le menu du navigateur :
+                « Installer l'application » / « Ajouter à l'écran d'accueil ».
+              </div>
+            </div>
+
+            <div class="card">
+              <h2>Mode hors ligne</h2>
+              <p class="muted">
+                Le catalogue produits et clients est mémorisé sur l'appareil.
+                Une vente saisie sans internet est conservée localement puis envoyée à Supabase dès que la connexion revient.
+              </p>
+              <button id="syncNowBtn" class="primary">Synchroniser maintenant</button>
+              <div id="syncMsg" class="small" style="margin-top:8px"></div>
+              <div id="offlineQueuePreview" class="table-wrap" style="margin-top:12px"></div>
+            </div>
+          </div>
+
+          <div class="grid pilotage-grid" style="margin-top:14px">
+            <div class="card">
+              <h2>Sauvegarde complète</h2>
+              <p class="muted">
+                Télécharge un fichier JSON contenant toutes les tables utiles de l'application.
+                Ce fichier est la sauvegarde restaurable de référence.
+              </p>
+              <button id="exportFullBackupBtn" class="primary">Exporter la sauvegarde complète</button>
+              <div id="backupMsg" class="small" style="margin-top:8px"></div>
+              <div class="notice" style="margin-top:12px">
+                Recommandation pilote : faire une sauvegarde au minimum chaque semaine,
+                et avant toute importation massive ou modification importante.
+              </div>
+            </div>
+
+            <div class="card">
+              <h2>Exports de lecture</h2>
+              <p class="muted">
+                Les CSV restent utiles pour Excel et les contrôles, mais ne remplacent pas la sauvegarde JSON complète.
+              </p>
+              <div class="actions">
+                <button id="backupProductsCsvBtn" class="secondary">Produits CSV</button>
+                <button id="backupClientsCsvBtn" class="secondary">Clients CSV</button>
+                <button id="backupSalesCsvBtn" class="secondary">Ventes CSV</button>
+                <button id="backupLinesCsvBtn" class="secondary">Lignes CSV</button>
+                <button id="backupPaymentsCsvBtn" class="secondary">Paiements CSV</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:14px">
+            <h2>Journal technique local</h2>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Élément</th><th>Valeur</th></tr></thead>
+                <tbody id="backupTechRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
       </main>
     </div>
 
@@ -640,6 +740,15 @@ function bindEvents() {
   document.querySelector('#bankCsvInput').onchange = event => importBankCsv(event.target.files?.[0])
   document.querySelector('#addBankRuleBtn').onclick = addBankRule
   document.querySelector('#addForecastEventBtn').onclick = addForecastEvent
+  document.querySelector('#refreshBackupBtn').onclick = renderBackupPanel
+  document.querySelector('#installAppBtn').onclick = installPwa
+  document.querySelector('#syncNowBtn').onclick = syncOfflineQueue
+  document.querySelector('#exportFullBackupBtn').onclick = exportFullBackup
+  document.querySelector('#backupProductsCsvBtn').onclick = exportProducts
+  document.querySelector('#backupClientsCsvBtn').onclick = exportClients
+  document.querySelector('#backupSalesCsvBtn').onclick = exportSales
+  document.querySelector('#backupLinesCsvBtn').onclick = exportSaleLines
+  document.querySelector('#backupPaymentsCsvBtn').onclick = exportPayments
 }
 
 function switchTab(btn) {
@@ -650,8 +759,18 @@ function switchTab(btn) {
 }
 
 async function loadData() {
+  loadOfflineState()
+
+  if (!navigator.onLine) {
+    if (!useOfflineSnapshot()) showGlobalError('Hors ligne et aucune donnée locale disponible. Connecte une première fois l’appareil à internet.')
+    return
+  }
+
   const profileRes = await supabase.from('user_profiles').select('organization_id').single()
-  if (profileRes.error) return showGlobalError(profileRes.error.message)
+  if (profileRes.error) {
+    if (!useOfflineSnapshot()) showGlobalError(profileRes.error.message)
+    return
+  }
   organizationId = profileRes.data.organization_id
 
   const [
@@ -709,6 +828,8 @@ function renderAll() {
   renderPayments()
   renderPilotage()
   renderTreasury()
+  renderBackupPanel()
+  saveOfflineSnapshot()
 }
 
 function showGlobalError(message) {
@@ -880,25 +1001,49 @@ async function completeSale() {
     payRows = [{ method: paymentMode, amount: total }]
   }
 
+  const payload = {
+    local_id: crypto.randomUUID(),
+    created_at: new Date().toISOString(),
+    customer_id: selectedCustomer?.id || null,
+    lines: cart.map(item => ({ product_id: item.id, quantity: item.qty })),
+    payments: payRows,
+    note: null,
+    total
+  }
+
+  if (!navigator.onLine) {
+    queueOfflineSale(payload)
+    applyOfflineSaleLocally(payload)
+    clearSaleForm()
+    msg.textContent = 'Vente enregistrée hors ligne. Elle sera synchronisée automatiquement dès que la connexion revient.'
+    renderAll()
+    return
+  }
+
   msg.textContent = 'Enregistrement…'
 
   const { error } = await supabase.rpc('complete_sale', {
-    p_customer_id: selectedCustomer?.id || null,
-    p_lines: cart.map(item => ({ product_id: item.id, quantity: item.qty })),
-    p_payments: payRows,
-    p_note: null
+    p_customer_id: payload.customer_id,
+    p_lines: payload.lines,
+    p_payments: payload.payments,
+    p_note: payload.note
   })
 
-  if (error) return msg.textContent = 'Erreur : ' + error.message
+  if (error) {
+    if (isNetworkError(error)) {
+      queueOfflineSale(payload)
+      applyOfflineSaleLocally(payload)
+      clearSaleForm()
+      msg.textContent = 'Connexion interrompue : vente gardée hors ligne et mise en attente de synchronisation.'
+      renderAll()
+      return
+    }
+    return msg.textContent = 'Erreur : ' + error.message
+  }
 
   msg.textContent = 'Vente enregistrée.'
-  cart = []
-  selectedCustomer = null
-  document.querySelector('#customerSearch').value = ''
-  document.querySelector('#selectedCustomer').style.display = 'none'
-  document.querySelector('#mixCard').value = ''
-  document.querySelector('#mixCash').value = ''
-  renderCart()
+  clearSaleForm()
+  localStorage.setItem('lastSyncAt', new Date().toISOString())
   await loadData()
 }
 
@@ -1218,6 +1363,296 @@ async function saveCustomer() {
 
   document.querySelector('#clientDialog').close()
   await loadData()
+}
+
+
+// =========================================================
+// PWA / HORS LIGNE / SAUVEGARDE
+// =========================================================
+
+function clearSaleForm() {
+  cart = []
+  selectedCustomer = null
+  const search = document.querySelector('#customerSearch')
+  if (search) search.value = ''
+  const selected = document.querySelector('#selectedCustomer')
+  if (selected) selected.style.display = 'none'
+  const mixCard = document.querySelector('#mixCard')
+  const mixCash = document.querySelector('#mixCash')
+  if (mixCard) mixCard.value = ''
+  if (mixCash) mixCash.value = ''
+  renderCart()
+}
+
+function isNetworkError(error) {
+  const text = String(error?.message || error || '').toLowerCase()
+  return !navigator.onLine || text.includes('fetch') || text.includes('network') || text.includes('failed')
+}
+
+function loadOfflineState() {
+  try {
+    offlineSnapshot = JSON.parse(localStorage.getItem('epices_offline_snapshot') || 'null')
+  } catch { offlineSnapshot = null }
+  try {
+    offlineQueue = JSON.parse(localStorage.getItem('epices_offline_queue') || '[]')
+  } catch { offlineQueue = [] }
+}
+
+function saveOfflineSnapshot() {
+  if (!session || !organizationId) return
+  const snapshot = {
+    saved_at: new Date().toISOString(),
+    organization_id: organizationId,
+    products,
+    customers,
+    categories,
+    settings,
+    loyaltyEvents
+  }
+  offlineSnapshot = snapshot
+  localStorage.setItem('epices_offline_snapshot', JSON.stringify(snapshot))
+}
+
+function useOfflineSnapshot() {
+  loadOfflineState()
+  if (!offlineSnapshot) return false
+  organizationId = offlineSnapshot.organization_id
+  products = offlineSnapshot.products || []
+  customers = offlineSnapshot.customers || []
+  categories = offlineSnapshot.categories || []
+  settings = offlineSnapshot.settings || {}
+  loyaltyEvents = offlineSnapshot.loyaltyEvents || []
+  sales = []
+  saleLines = []
+  payments = []
+  managementExpenses = []
+  cashClosings = []
+  bankTransactions = []
+  bankRules = []
+  forecastEvents = []
+  renderAll()
+  return true
+}
+
+function queueOfflineSale(payload) {
+  loadOfflineState()
+  offlineQueue.push(payload)
+  localStorage.setItem('epices_offline_queue', JSON.stringify(offlineQueue))
+}
+
+function applyOfflineSaleLocally(payload) {
+  for (const line of payload.lines) {
+    const product = products.find(p => p.id === line.product_id)
+    if (product) product.stock_quantity = num(product.stock_quantity) - num(line.quantity)
+  }
+
+  if (payload.customer_id) {
+    loyaltyEvents.unshift({
+      id: 'offline-' + payload.local_id,
+      organization_id: organizationId,
+      customer_id: payload.customer_id,
+      event_type: 'visit',
+      points_delta: 1,
+      created_at: payload.created_at,
+      sale_id: null,
+      note: 'Passage hors ligne en attente de synchronisation'
+    })
+  }
+
+  saveOfflineSnapshot()
+}
+
+async function syncOfflineQueue() {
+  const msg = document.querySelector('#syncMsg')
+  loadOfflineState()
+
+  if (!navigator.onLine) {
+    if (msg) msg.textContent = 'Pas de connexion internet.'
+    renderBackupPanel()
+    return
+  }
+
+  if (!offlineQueue.length) {
+    if (msg) msg.textContent = 'Aucune vente en attente.'
+    localStorage.setItem('lastSyncAt', new Date().toISOString())
+    renderBackupPanel()
+    return
+  }
+
+  if (msg) msg.textContent = `Synchronisation de ${offlineQueue.length} vente(s)…`
+
+  const remaining = []
+  for (const item of offlineQueue) {
+    const { error } = await supabase.rpc('complete_sale', {
+      p_customer_id: item.customer_id,
+      p_lines: item.lines,
+      p_payments: item.payments,
+      p_note: item.note || `Vente hors ligne ${item.local_id}`
+    })
+    if (error) {
+      remaining.push(item)
+      if (!isNetworkError(error)) {
+        console.error('Synchronisation vente hors ligne impossible', item.local_id, error)
+      }
+      if (!navigator.onLine) break
+    }
+  }
+
+  offlineQueue = remaining
+  localStorage.setItem('epices_offline_queue', JSON.stringify(offlineQueue))
+
+  if (!remaining.length) {
+    localStorage.setItem('lastSyncAt', new Date().toISOString())
+    if (msg) msg.textContent = 'Synchronisation terminée.'
+    await loadData()
+  } else {
+    if (msg) msg.textContent = `${remaining.length} vente(s) restent en attente. Vérifie le stock ou la connexion.`
+    renderBackupPanel()
+  }
+}
+
+function renderBackupPanel() {
+  const section = document.querySelector('#backup')
+  if (!section) return
+  loadOfflineState()
+
+  const connection = document.querySelector('#connectionStatus')
+  if (connection) {
+    connection.textContent = navigator.onLine ? 'En ligne' : 'Hors ligne'
+    connection.className = 'kpi-value ' + (navigator.onLine ? 'connection-ok' : 'connection-off')
+  }
+
+  const queueCount = document.querySelector('#offlineQueueCount')
+  if (queueCount) queueCount.textContent = offlineQueue.length
+
+  const lastBackup = localStorage.getItem('lastFullBackupAt')
+  const lastSync = localStorage.getItem('lastSyncAt')
+  const backupLabel = document.querySelector('#lastBackupLabel')
+  const syncLabel = document.querySelector('#lastSyncLabel')
+  if (backupLabel) backupLabel.textContent = lastBackup ? fmtDateTime(lastBackup) : 'Jamais'
+  if (syncLabel) syncLabel.textContent = lastSync ? fmtDateTime(lastSync) : '—'
+
+  const preview = document.querySelector('#offlineQueuePreview')
+  if (preview) {
+    preview.innerHTML = offlineQueue.length ? `
+      <table>
+        <thead><tr><th>Date</th><th>Client</th><th>Total</th><th>État</th></tr></thead>
+        <tbody>
+          ${offlineQueue.map(item => `
+            <tr>
+              <td>${fmtDateTime(item.created_at)}</td>
+              <td>${esc(customerName(item.customer_id))}</td>
+              <td>${eur(item.total)}</td>
+              <td><span class="status off">À synchroniser</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    ` : '<div class="muted">Aucune vente en attente.</div>'
+  }
+
+  const techRows = document.querySelector('#backupTechRows')
+  if (techRows) {
+    techRows.innerHTML = `
+      <tr><td>Version application</td><td>Sprint 5</td></tr>
+      <tr><td>Organisation</td><td>${esc(organizationId || '—')}</td></tr>
+      <tr><td>Snapshot hors ligne</td><td>${offlineSnapshot?.saved_at ? fmtDateTime(offlineSnapshot.saved_at) : 'Non disponible'}</td></tr>
+      <tr><td>Produits mémorisés</td><td>${offlineSnapshot?.products?.length ?? products.length}</td></tr>
+      <tr><td>Clients mémorisés</td><td>${offlineSnapshot?.customers?.length ?? customers.length}</td></tr>
+      <tr><td>Service worker</td><td>${'serviceWorker' in navigator ? 'Compatible' : 'Non compatible'}</td></tr>
+    `
+  }
+
+  const installBtn = document.querySelector('#installAppBtn')
+  if (installBtn) installBtn.disabled = !installPrompt
+}
+
+async function installPwa() {
+  const msg = document.querySelector('#installMsg')
+  if (!installPrompt) {
+    msg.textContent = 'Le navigateur ne propose pas l’installation automatique. Utilise son menu « Installer l’application » / « Ajouter à l’écran d’accueil ».'
+    return
+  }
+
+  installPrompt.prompt()
+  const choice = await installPrompt.userChoice
+  msg.textContent = choice.outcome === 'accepted' ? 'Installation lancée.' : 'Installation annulée.'
+  installPrompt = null
+  renderBackupPanel()
+}
+
+async function exportFullBackup() {
+  const msg = document.querySelector('#backupMsg')
+  msg.textContent = 'Préparation de la sauvegarde…'
+
+  if (!navigator.onLine) {
+    msg.textContent = 'La sauvegarde complète nécessite une connexion internet.'
+    return
+  }
+
+  const tables = [
+    'organizations','user_profiles','settings','product_categories','products',
+    'customers','loyalty_events','sales','sale_lines','payments','stock_movements',
+    'cash_closings','bank_transactions','bank_category_rules','forecast_events',
+    'management_expenses'
+  ]
+
+  const data = {}
+  for (const table of tables) {
+    const { data: rows, error } = await supabase.from(table).select('*')
+    if (error) {
+      msg.textContent = `Erreur sur ${table} : ${error.message}`
+      return
+    }
+    data[table] = rows || []
+  }
+
+  loadOfflineState()
+  const backup = {
+    format: 'tant-quil-y-aura-des-epices-backup',
+    version: 1,
+    exported_at: new Date().toISOString(),
+    organization_id: organizationId,
+    tables: data,
+    offline_queue: offlineQueue
+  }
+
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `sauvegarde_complete_epices_${todayStamp()}.json`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+
+  localStorage.setItem('lastFullBackupAt', backup.exported_at)
+  msg.textContent = 'Sauvegarde complète téléchargée.'
+  renderBackupPanel()
+}
+
+async function registerPwa() {
+  if ('serviceWorker' in navigator) {
+    try {
+      await navigator.serviceWorker.register('/sw.js')
+    } catch (error) {
+      console.warn('Service worker non enregistré', error)
+    }
+  }
+
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault()
+    installPrompt = event
+    renderBackupPanel()
+  })
+
+  window.addEventListener('online', async () => {
+    renderBackupPanel()
+    await syncOfflineQueue()
+  })
+
+  window.addEventListener('offline', renderBackupPanel)
 }
 
 // =========================================================
@@ -2550,4 +2985,5 @@ async function addForecastEvent() {
   await loadData()
 }
 
+registerPwa()
 init()
