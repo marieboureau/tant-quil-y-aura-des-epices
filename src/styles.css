@@ -72,3 +72,12 @@ dialog{border:0;background:transparent;padding:0}dialog::backdrop{background:rgb
 @media(max-width:650px){
   #backupTechRows td:first-child{width:auto}
 }
+
+
+/* Finition fonctionnelle — Paramètres */
+#settings .field.compact{min-width:80px}
+#settings table td{vertical-align:middle}
+@media(max-width:900px){
+  #settings .row{align-items:stretch}
+  #settings .row .field{flex:1}
+}
