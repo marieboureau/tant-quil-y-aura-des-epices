@@ -96,6 +96,7 @@ function renderShell() {
           <button data-tab="pilotage">Pilotage</button>
           <button data-tab="treasury">Caisse & trésorerie</button>
           <button data-tab="backup">Sauvegarde & appareil</button>
+          <button data-tab="settings">Paramètres</button>
         </nav>
       </aside>
 
@@ -360,27 +361,6 @@ function renderShell() {
                 </table>
               </div>
             </div>
-
-            <div class="card">
-              <h2>Paramètres de pilotage</h2>
-              <label class="small">Début d'activité</label>
-              <input id="settingActivityStart" class="field" type="date">
-              <div class="grid" style="margin-top:8px">
-                <div><label class="small">Cotisations sociales %</label><input id="settingSocialRate" class="field" type="number" step="0.01"></div>
-                <div><label class="small">Versement libératoire %</label><input id="settingTaxRate" class="field" type="number" step="0.01"></div>
-              </div>
-              <div class="grid" style="margin-top:8px">
-                <div><label class="small">TVA seuil base €</label><input id="settingVatBase" class="field" type="number"></div>
-                <div><label class="small">TVA seuil majoré €</label><input id="settingVatMajor" class="field" type="number"></div>
-              </div>
-              <label class="small" style="display:block;margin-top:8px">Seuil micro €</label>
-              <input id="settingMicroThreshold" class="field" type="number">
-              <button id="savePilotageSettingsBtn" class="primary" style="margin-top:10px">Enregistrer les paramètres</button>
-              <div id="settingsMsg" class="small" style="margin-top:6px"></div>
-              <div class="notice" style="margin-top:12px">
-                Les seuils sont paramétrables pour rester à jour. Les valeurs 2026 préchargées sont : TVA 85 000 € / 93 500 € et micro 203 100 €.
-              </div>
-            </div>
           </div>
         </section>
 
@@ -596,6 +576,103 @@ function renderShell() {
           </div>
         </section>
 
+        <section id="settings" class="section">
+          <div class="top">
+            <div>
+              <h1>Paramètres</h1>
+              <div class="muted">Réglages généraux de l'application et du commerce.</div>
+            </div>
+            <button id="refreshSettingsBtn" class="secondary">Actualiser</button>
+          </div>
+
+          <div class="grid pilotage-grid">
+            <div class="card">
+              <h2>Catégories produits</h2>
+              <div class="row">
+                <input id="newCategoryName" class="field" placeholder="Nouvelle catégorie">
+                <button id="addCategoryBtn" class="primary">Ajouter</button>
+              </div>
+              <div id="categoryMsg" class="small" style="margin-top:6px"></div>
+              <div class="table-wrap" style="margin-top:12px">
+                <table>
+                  <thead><tr><th>Ordre</th><th>Nom</th><th>Statut</th><th>Actions</th></tr></thead>
+                  <tbody id="categoryRows"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2>Fidélité</h2>
+              <label class="small">Nombre de passages nécessaires pour obtenir un cadeau</label>
+              <input id="settingLoyaltyVisits" class="field" type="number" min="1" step="1">
+
+              <div class="notice" style="margin-top:12px">
+                Les produits pouvant être offerts restent définis directement dans la fiche produit via l'option « Cadeau ».
+              </div>
+
+              <h2 style="margin-top:22px">Modes de paiement</h2>
+              <div class="notice">
+                Les modes actuellement activés sont : CB, espèces et chèque.
+                Ils sont conservés comme paramètres fixes pour cette première version.
+              </div>
+            </div>
+          </div>
+
+          <div class="grid pilotage-grid" style="margin-top:14px">
+            <div class="card">
+              <h2>Pilotage fiscal</h2>
+
+              <label class="small">Date de début d'activité</label>
+              <input id="appSettingActivityStart" class="field" type="date">
+
+              <div class="grid" style="margin-top:8px">
+                <div>
+                  <label class="small">Cotisations sociales %</label>
+                  <input id="appSettingSocialRate" class="field" type="number" step="0.01">
+                </div>
+                <div>
+                  <label class="small">Versement libératoire %</label>
+                  <input id="appSettingTaxRate" class="field" type="number" step="0.01">
+                </div>
+              </div>
+
+              <div class="grid" style="margin-top:8px">
+                <div>
+                  <label class="small">TVA seuil de base €</label>
+                  <input id="appSettingVatBase" class="field" type="number">
+                </div>
+                <div>
+                  <label class="small">TVA seuil majoré €</label>
+                  <input id="appSettingVatMajor" class="field" type="number">
+                </div>
+              </div>
+
+              <label class="small" style="display:block;margin-top:8px">Seuil micro €</label>
+              <input id="appSettingMicroThreshold" class="field" type="number">
+
+              <button id="saveAppSettingsBtn" class="primary" style="margin-top:10px">Enregistrer les paramètres</button>
+              <div id="appSettingsMsg" class="small" style="margin-top:6px"></div>
+            </div>
+
+            <div class="card">
+              <h2>Catégorisation bancaire</h2>
+              <div class="small">Ces règles sont aussi utilisées dans l'onglet Caisse & trésorerie.</div>
+              <div class="grid" style="margin-top:10px">
+                <input id="settingsRuleKeyword" class="field" placeholder="Mot-clé du libellé">
+                <input id="settingsRuleCategory" class="field" placeholder="Catégorie">
+              </div>
+              <button id="settingsAddBankRuleBtn" class="primary" style="margin-top:8px">Ajouter la règle</button>
+              <div id="settingsRuleMsg" class="small" style="margin-top:6px"></div>
+              <div class="table-wrap" style="margin-top:10px">
+                <table>
+                  <thead><tr><th>Mot-clé</th><th>Catégorie</th><th></th></tr></thead>
+                  <tbody id="settingsBankRuleRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
       </main>
     </div>
 
@@ -732,7 +809,6 @@ function bindEvents() {
   document.querySelector('#applyImportBtn').onclick = applyImport
   document.querySelector('#refreshPilotageBtn').onclick = loadData
   document.querySelector('#addExpenseBtn').onclick = addManagementExpense
-  document.querySelector('#savePilotageSettingsBtn').onclick = savePilotageSettings
   document.querySelector('#refreshTreasuryBtn').onclick = loadData
   document.querySelector('#closingDate').onchange = renderClosingExpected
   document.querySelector('#saveClosingBtn').onclick = saveCashClosing
@@ -749,6 +825,10 @@ function bindEvents() {
   document.querySelector('#backupSalesCsvBtn').onclick = exportSales
   document.querySelector('#backupLinesCsvBtn').onclick = exportSaleLines
   document.querySelector('#backupPaymentsCsvBtn').onclick = exportPayments
+  document.querySelector('#refreshSettingsBtn').onclick = renderSettings
+  document.querySelector('#addCategoryBtn').onclick = addCategory
+  document.querySelector('#saveAppSettingsBtn').onclick = saveAppSettings
+  document.querySelector('#settingsAddBankRuleBtn').onclick = addBankRuleFromSettings
 }
 
 function switchTab(btn) {
@@ -829,6 +909,7 @@ function renderAll() {
   renderPilotage()
   renderTreasury()
   renderBackupPanel()
+  renderSettings()
   saveOfflineSnapshot()
 }
 
@@ -2981,6 +3062,190 @@ async function addForecastEvent() {
 
   document.querySelector('#forecastLabel').value = ''
   document.querySelector('#forecastAmount').value = ''
+  msg.textContent = ''
+  await loadData()
+}
+
+
+// =========================================================
+// FINITION FONCTIONNELLE — PARAMÈTRES
+// =========================================================
+
+function renderSettings() {
+  const section = document.querySelector('#settings')
+  if (!section || !settings) return
+
+  const loyalty = document.querySelector('#settingLoyaltyVisits')
+  if (loyalty) loyalty.value = Number(settings.loyalty_visits_per_reward || 5)
+
+  const start = document.querySelector('#appSettingActivityStart')
+  const social = document.querySelector('#appSettingSocialRate')
+  const tax = document.querySelector('#appSettingTaxRate')
+  const vatBase = document.querySelector('#appSettingVatBase')
+  const vatMajor = document.querySelector('#appSettingVatMajor')
+  const micro = document.querySelector('#appSettingMicroThreshold')
+
+  if (start) start.value = settings.activity_start_date || ''
+  if (social) social.value = num(settings.micro_social_rate)
+  if (tax) tax.value = num(settings.income_tax_rate)
+  if (vatBase) vatBase.value = num(settings.vat_base_threshold)
+  if (vatMajor) vatMajor.value = num(settings.vat_major_threshold)
+  if (micro) micro.value = num(settings.micro_threshold)
+
+  renderCategorySettings()
+  renderBankRulesInSettings()
+}
+
+function renderCategorySettings() {
+  const body = document.querySelector('#categoryRows')
+  if (!body) return
+
+  const ordered = [...categories].sort((a,b) => num(a.sort_order) - num(b.sort_order))
+
+  body.innerHTML = ordered.map(cat => `
+    <tr>
+      <td style="width:100px">
+        <input class="field compact category-order" data-id="${cat.id}" type="number" value="${num(cat.sort_order)}">
+      </td>
+      <td>
+        <input class="field category-name" data-id="${cat.id}" value="${esc(cat.name)}">
+      </td>
+      <td>
+        <span class="status ${cat.active ? 'ok' : 'off'}">${cat.active ? 'Active' : 'Inactive'}</span>
+      </td>
+      <td>
+        <div class="row">
+          <button class="secondary save-category-btn" data-id="${cat.id}">Enregistrer</button>
+          <button class="secondary toggle-category-btn" data-id="${cat.id}" data-active="${cat.active}">
+            ${cat.active ? 'Désactiver' : 'Réactiver'}
+          </button>
+          <button class="danger delete-category-btn" data-id="${cat.id}">Supprimer</button>
+        </div>
+      </td>
+    </tr>
+  `).join('')
+
+  document.querySelectorAll('.save-category-btn').forEach(btn => btn.onclick = () => saveCategory(btn.dataset.id))
+  document.querySelectorAll('.toggle-category-btn').forEach(btn => btn.onclick = () => toggleCategory(btn.dataset.id, btn.dataset.active === 'true'))
+  document.querySelectorAll('.delete-category-btn').forEach(btn => btn.onclick = () => deleteCategory(btn.dataset.id))
+}
+
+async function addCategory() {
+  const msg = document.querySelector('#categoryMsg')
+  const name = document.querySelector('#newCategoryName').value.trim()
+
+  if (!name) return msg.textContent = 'Nom obligatoire.'
+
+  msg.textContent = 'Ajout…'
+  const { error } = await supabase.rpc('create_product_category', { p_name: name })
+
+  if (error) return msg.textContent = 'Erreur : ' + error.message
+
+  document.querySelector('#newCategoryName').value = ''
+  msg.textContent = ''
+  await loadData()
+}
+
+async function saveCategory(id) {
+  const cat = categories.find(c => c.id === id)
+  if (!cat) return
+
+  const name = document.querySelector(`.category-name[data-id="${id}"]`).value.trim()
+  const sortOrder = Number(document.querySelector(`.category-order[data-id="${id}"]`).value || 0)
+
+  const { error } = await supabase.rpc('update_product_category', {
+    p_category_id: id,
+    p_name: name,
+    p_sort_order: sortOrder,
+    p_active: cat.active
+  })
+
+  if (error) return alert(error.message)
+  await loadData()
+}
+
+async function toggleCategory(id, currentlyActive) {
+  const cat = categories.find(c => c.id === id)
+  if (!cat) return
+
+  const { error } = await supabase.rpc('update_product_category', {
+    p_category_id: id,
+    p_name: cat.name,
+    p_sort_order: num(cat.sort_order),
+    p_active: !currentlyActive
+  })
+
+  if (error) return alert(error.message)
+  await loadData()
+}
+
+async function deleteCategory(id) {
+  if (!confirm('Supprimer cette catégorie ? Si elle est utilisée par un produit, la suppression sera refusée.')) return
+
+  const { error } = await supabase.rpc('delete_product_category', {
+    p_category_id: id
+  })
+
+  if (error) return alert(error.message)
+  await loadData()
+}
+
+async function saveAppSettings() {
+  const msg = document.querySelector('#appSettingsMsg')
+  msg.textContent = 'Enregistrement…'
+
+  const { error } = await supabase.rpc('update_app_settings', {
+    p_loyalty_visits_per_reward: Number(document.querySelector('#settingLoyaltyVisits').value || 5),
+    p_activity_start_date: document.querySelector('#appSettingActivityStart').value || null,
+    p_micro_social_rate: Number(document.querySelector('#appSettingSocialRate').value || 0),
+    p_income_tax_rate: Number(document.querySelector('#appSettingTaxRate').value || 0),
+    p_vat_base_threshold: Number(document.querySelector('#appSettingVatBase').value || 0),
+    p_vat_major_threshold: Number(document.querySelector('#appSettingVatMajor').value || 0),
+    p_micro_threshold: Number(document.querySelector('#appSettingMicroThreshold').value || 0)
+  })
+
+  if (error) return msg.textContent = 'Erreur : ' + error.message
+
+  msg.textContent = 'Paramètres enregistrés.'
+  await loadData()
+}
+
+function renderBankRulesInSettings() {
+  const body = document.querySelector('#settingsBankRuleRows')
+  if (!body) return
+
+  body.innerHTML = bankRules.map(rule => `
+    <tr>
+      <td>${esc(rule.keyword)}</td>
+      <td>${esc(rule.category)}</td>
+      <td><button class="danger settings-delete-rule" data-id="${rule.id}">×</button></td>
+    </tr>
+  `).join('')
+
+  document.querySelectorAll('.settings-delete-rule').forEach(btn => btn.onclick = async () => {
+    const { error } = await supabase.from('bank_category_rules').delete().eq('id', btn.dataset.id)
+    if (error) return alert(error.message)
+    await loadData()
+  })
+}
+
+async function addBankRuleFromSettings() {
+  const msg = document.querySelector('#settingsRuleMsg')
+  const keyword = document.querySelector('#settingsRuleKeyword').value.trim()
+  const category = document.querySelector('#settingsRuleCategory').value.trim()
+
+  if (!keyword || !category) return msg.textContent = 'Mot-clé et catégorie obligatoires.'
+
+  const { error } = await supabase.from('bank_category_rules').insert({
+    organization_id: organizationId,
+    keyword,
+    category
+  })
+
+  if (error) return msg.textContent = 'Erreur : ' + error.message
+
+  document.querySelector('#settingsRuleKeyword').value = ''
+  document.querySelector('#settingsRuleCategory').value = ''
   msg.textContent = ''
   await loadData()
 }
