@@ -1,0 +1,180 @@
+
+/* =========================================================
+   Finition UI / UX — navigation, logo, sticky, mobile/tablette
+   ========================================================= */
+
+/* Sidebar always visible on desktop/tablet */
+@media (min-width:901px){
+  aside{
+    position:sticky;
+    top:0;
+    height:100vh;
+    overflow-y:auto;
+    align-self:start;
+    padding:18px 14px;
+  }
+
+  main{
+    align-self:start;
+  }
+
+  /* Keep the cart visible while products scroll */
+  #sell .sell-layout > .card:last-child{
+    position:sticky;
+    top:18px;
+    align-self:start;
+    max-height:calc(100vh - 36px);
+    overflow:auto;
+  }
+}
+
+/* Brand */
+.ui-brand{
+  margin:-2px 0 14px;
+  padding:10px;
+  border-radius:14px;
+  background:#f7f4ef;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.ui-brand img{
+  display:block;
+  width:100%;
+  max-width:175px;
+  max-height:155px;
+  object-fit:contain;
+}
+aside > .brand,
+aside > .sub{
+  display:none!important;
+}
+
+/* Top screen header remains accessible during long pages */
+.section.active > .top{
+  position:sticky;
+  top:0;
+  z-index:7;
+  background:rgba(247,244,239,.96);
+  backdrop-filter:blur(7px);
+  padding:8px 0 10px;
+  margin-top:-8px;
+  border-bottom:1px solid rgba(228,221,211,.75);
+}
+
+/* Sticky table headers */
+.table-wrap{
+  position:relative;
+}
+.table-wrap thead th{
+  position:sticky;
+  top:0;
+  z-index:3;
+  background:#fff;
+  box-shadow:0 1px 0 var(--line);
+}
+
+/* History status readability */
+.status.ok[data-friendly-status="1"]{
+  background:#e7f0e4;
+  color:var(--ok);
+}
+.status.off[data-friendly-status="1"],
+.status.cancelled[data-friendly-status="1"]{
+  background:#f4e4e4;
+  color:var(--danger);
+}
+
+/* Sell screen hierarchy */
+#sell .total{
+  font-size:30px;
+}
+#sell #validateSale{
+  min-height:52px;
+  font-size:16px;
+}
+#sell .payments .pay{
+  min-height:46px;
+}
+#sell #customerSearch{
+  margin-top:5px;
+}
+#sell .product-card{
+  transition:transform .08s ease,border-color .08s ease,box-shadow .08s ease;
+}
+#sell .product-card:active{
+  transform:scale(.985);
+}
+#sell #saleMsg:not(:empty){
+  padding:9px 11px;
+  border-radius:9px;
+  background:#f4eee5;
+  color:var(--text);
+}
+
+/* Cleaner settings / backup visual rhythm */
+#settings .card > h2,
+#backup .card > h2,
+#treasury .card > h2,
+#pilotage .card > h2{
+  letter-spacing:-.01em;
+}
+
+/* Mobile/tablet navigation */
+@media(max-width:900px){
+  .ui-brand{display:none}
+
+  aside{
+    position:sticky;
+    top:0;
+    z-index:20;
+    height:auto;
+    overflow:visible;
+    padding:8px 10px;
+    box-shadow:0 3px 12px rgba(30,20,10,.12);
+  }
+
+  nav{
+    display:flex;
+    overflow-x:auto;
+    overscroll-behavior-x:contain;
+    scrollbar-width:none;
+    gap:5px;
+    padding-bottom:2px;
+  }
+  nav::-webkit-scrollbar{display:none}
+
+  nav button{
+    flex:0 0 auto;
+    min-height:42px;
+    padding:10px 12px;
+  }
+
+  .section.active > .top{
+    top:58px;
+    z-index:8;
+  }
+
+  #sell .sell-layout > .card:last-child{
+    position:static;
+    max-height:none;
+    overflow:visible;
+  }
+
+  .table-wrap thead th{
+    top:0;
+  }
+}
+
+/* Phone: prioritize touch targets and remove excessive widths */
+@media(max-width:600px){
+  main{padding:10px}
+  .card{padding:13px;border-radius:13px}
+  h1{font-size:23px}
+  h2{font-size:19px}
+  .primary,.secondary,.danger{min-height:42px}
+  #sell .product-grid{grid-template-columns:1fr 1fr}
+  #sell .product-card{min-height:92px;padding:11px}
+  #sell .total{font-size:27px}
+  .actions{width:100%}
+}
