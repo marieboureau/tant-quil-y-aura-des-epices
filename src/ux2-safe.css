@@ -1,0 +1,19 @@
+
+/* UX2 propre */
+.mixed-payment-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ux2-thresholds{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.ux2-thresholds h3{font-size:14px;margin:0 0 8px}
+.ux2-legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted);margin-bottom:8px}
+.ux2-swatch{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-2px}
+.ux2-swatch.card{background:#755638}.ux2-swatch.cheque{background:#aa8663}.ux2-swatch.cash{background:#d7c1a5}
+.ux2-treasury-chart{width:100%;overflow:auto}
+.ux2-treasury-chart svg{width:100%;min-width:620px;height:auto;display:block}
+.cancelled-row{opacity:.62;text-decoration:none}
+.cancelled-row td{background:#faf4f4}
+.status.cancelled{background:#f4e4e4;color:var(--danger)}
+@media(max-width:900px){
+  .mixed-payment-grid,.ux2-thresholds{grid-template-columns:1fr}
+}
+
+.ux2-svg-card{fill:#755638}.ux2-svg-cheque{fill:#aa8663}.ux2-svg-cash{fill:#d7c1a5}
+.ux2-pct{font-size:10px;font-weight:700;fill:white}
