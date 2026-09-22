@@ -3496,7 +3496,7 @@ async function saveAppSettings() {
   msg.textContent = 'Enregistrement…'
 
   const { error } = await supabase.rpc('update_app_settings', {
-    p_loyalty_visits_per_reward: Number(document.querySelector('#settingLoyaltyVisits').value || 5),
+    p_loyalty_visits_per_reward: Number(document.querySelector('#settingLoyaltyVisits').value || 10),
     p_activity_start_date: document.querySelector('#appSettingActivityStart').value || null,
     p_micro_social_rate: Number(document.querySelector('#appSettingSocialRate').value || 0),
     p_income_tax_rate: Number(document.querySelector('#appSettingTaxRate').value || 0),
