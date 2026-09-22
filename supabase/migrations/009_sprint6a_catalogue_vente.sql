@@ -30,6 +30,9 @@ where not exists (
     and lower(pc.name)=lower(x.name)
 );
 
+-- Fidélité retenue pour le banc : 10 passages = 1 cadeau.
+update public.settings set loyalty_visits_per_reward=10 where loyalty_visits_per_reward is distinct from 10;
+
 -- 2) Produit : sous-famille + mode de tarification.
 alter table public.products add column if not exists subfamily text;
 alter table public.products add column if not exists pricing_mode text not null default 'tiered_weight';
