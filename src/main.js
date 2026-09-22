@@ -6,6 +6,7 @@ const app = document.querySelector('#app')
 let session = null
 let organizationId = null
 let products = []
+let productPriceTiers = []
 let customers = []
 let categories = []
 let loyaltyEvents = []
@@ -16,6 +17,8 @@ let payments = []
 let cart = []
 let selectedCustomer = null
 let paymentMode = 'card'
+let discountPercent = 0
+let commercialGiftAmount = 0
 let pendingImport = null
 let managementExpenses = []
 let cashClosings = []
@@ -138,14 +141,43 @@ function renderShell() {
                 <button class="pay active" data-pay="card">CB</button>
                 <button class="pay" data-pay="cash">Espèces</button>
                 <button class="pay" data-pay="cheque">Chèque</button>
+                <button class="pay" data-pay="gift">Offert</button>
               </div>
 
               <button id="mixedBtn" class="secondary" style="width:100%;margin-top:8px">Paiement mixte</button>
               <div id="mixedBox" style="display:none">
-                <div class="grid" style="margin-top:8px">
-                  <input id="mixCard" class="field" type="number" step="0.01" placeholder="CB €">
-                  <input id="mixCash" class="field" type="number" step="0.01" placeholder="Espèces €">
+                <div class="mixed-payment-grid" style="margin-top:8px">
+                  <input id="mixCard" class="field" type="number" min="0" step="0.01" placeholder="CB €">
+                  <input id="mixCash" class="field" type="number" min="0" step="0.01" placeholder="Espèces €">
+                  <input id="mixCheque" class="field" type="number" min="0" step="0.01" placeholder="Chèque €">
+                  <input id="mixGift" class="field" type="number" min="0" step="0.01" placeholder="Offert €">
                 </div>
+                <div class="small" style="margin-top:5px">Le montant « Offert » sort le produit du stock sans créer d’encaissement.</div>
+              </div>
+
+              <div class="sale-adjustments">
+                <div>
+                  <label class="small">Remise</label>
+                  <div class="discount-buttons">
+                    <button type="button" class="secondary discount-btn active" data-discount="0">0 %</button>
+                    <button type="button" class="secondary discount-btn" data-discount="5">5 %</button>
+                    <button type="button" class="secondary discount-btn" data-discount="10">10 %</button>
+                    <button type="button" class="secondary discount-btn" data-discount="20">20 %</button>
+                    <input id="customDiscount" class="field compact discount-custom" type="number" min="0" max="100" step="0.5" placeholder="% libre">
+                  </div>
+                </div>
+                <div class="margin-panel">
+                  <div class="small">Marge ticket estimée</div>
+                  <div class="row space"><span>Avant geste</span><b id="marginBefore">—</b></div>
+                  <div class="row space"><span>Après remise / offert</span><b id="marginAfter">—</b></div>
+                  <div id="marginHint" class="small"></div>
+                </div>
+              </div>
+
+              <div id="ticketAdjustments" class="ticket-adjustments">
+                <div class="row space"><span>Sous-total</span><span id="cartSubtotal">0,00 €</span></div>
+                <div class="row space"><span>Remise</span><span id="discountDisplay">0,00 €</span></div>
+                <div class="row space"><span>Offert</span><span id="giftDisplay">0,00 €</span></div>
               </div>
 
               <button id="validateSale" class="primary" style="width:100%;margin-top:12px">Valider la vente</button>
@@ -173,8 +205,8 @@ function renderShell() {
               <table>
                 <thead>
                   <tr>
-                    <th>Réf.</th><th>Produit</th><th>Catégorie</th><th>Stock</th>
-                    <th>Achat HT</th><th>Vente HT</th><th>Cadeau</th><th>Statut</th>
+                    <th>Réf.</th><th>Produit</th><th>Catégorie</th><th>Sous-famille</th><th>Stock</th>
+                    <th>Achat HT</th><th>Tarifs</th><th>Cadeau</th><th>Statut</th>
                   </tr>
                 </thead>
                 <tbody id="productRows"></tbody>
@@ -605,6 +637,8 @@ function renderShell() {
               <h2>Fidélité</h2>
               <label class="small">Nombre de passages nécessaires pour obtenir un cadeau</label>
               <input id="settingLoyaltyVisits" class="field" type="number" min="1" step="1">
+              <button id="saveLoyaltyBtn" class="primary" style="margin-top:8px">Enregistrer la fidélité</button>
+              <div id="loyaltyMsg" class="small" style="margin-top:6px"></div>
 
               <div class="notice" style="margin-top:12px">
                 Les produits pouvant être offerts restent définis directement dans la fiche produit via l'option « Cadeau ».
@@ -683,13 +717,27 @@ function renderShell() {
         <input id="pName" class="field">
         <label class="small">Catégorie</label>
         <select id="pCategory" class="field"></select>
+        <label class="small" style="display:block;margin-top:8px">Sous-famille</label>
+        <input id="pSubfamily" class="field" placeholder="Ex. Poivres, Thé noir, Sels">
+        <label class="small" style="display:block;margin-top:8px">Mode de tarification</label>
+        <select id="pPricingMode" class="field">
+          <option value="tiered_weight">Poids — prix par paliers</option>
+          <option value="fixed_unit">Unité — prix fixe</option>
+          <option value="free_unit">Unité — prix libre à la vente</option>
+        </select>
         <div class="grid" style="margin-top:10px">
           <input id="pStock" type="number" class="field" placeholder="Stock initial">
           <input id="pThreshold" type="number" class="field" placeholder="Seuil d’alerte">
         </div>
         <div class="grid" style="margin-top:10px">
           <input id="pBuy" type="number" step="0.01" class="field" placeholder="Achat HT / base">
-          <input id="pSell" type="number" step="0.01" class="field" placeholder="Vente HT / base">
+          <input id="pSell" type="number" step="0.01" class="field" placeholder="Prix fixe / unité">
+        </div>
+        <div class="grid tier-editor" style="margin-top:10px">
+          <input id="pPrice25" type="number" step="0.01" class="field" placeholder="Prix 25 g">
+          <input id="pPrice50" type="number" step="0.01" class="field" placeholder="Prix 50 g">
+          <input id="pPrice100" type="number" step="0.01" class="field" placeholder="Prix 100 g">
+          <input id="pPrice200" type="number" step="0.01" class="field" placeholder="Prix 200 g">
         </div>
         <div class="row" style="justify-content:flex-end;margin-top:14px">
           <button value="cancel" class="secondary">Annuler</button>
@@ -776,17 +824,55 @@ function bindEvents() {
   document.querySelector('#saveProductBtn').onclick = saveProduct
   document.querySelector('#saveClientBtn').onclick = saveCustomer
   document.querySelector('#validateSale').onclick = completeSale
+  document.querySelector('#saveLoyaltyBtn').onclick = saveLoyaltySettings
+
+  document.querySelectorAll('.discount-btn').forEach(btn => btn.onclick = () => {
+    discountPercent = Number(btn.dataset.discount || 0)
+    document.querySelectorAll('.discount-btn').forEach(x => x.classList.toggle('active', x === btn))
+    document.querySelector('#customDiscount').value = ''
+    if (paymentMode === 'gift' && document.querySelector('#mixedBox').style.display === 'none') {
+      commercialGiftAmount = ticketAfterDiscountHt()
+    }
+    renderCart()
+  })
+  document.querySelector('#customDiscount').oninput = event => {
+    discountPercent = Math.max(0, Math.min(100, Number(event.target.value || 0)))
+    document.querySelectorAll('.discount-btn').forEach(x => x.classList.remove('active'))
+    if (paymentMode === 'gift' && document.querySelector('#mixedBox').style.display === 'none') {
+      commercialGiftAmount = ticketAfterDiscountHt()
+    }
+    renderCart()
+  }
 
   document.querySelector('#mixedBtn').onclick = () => {
     const box = document.querySelector('#mixedBox')
     box.style.display = box.style.display === 'none' ? 'block' : 'none'
+    if (box.style.display !== 'none') {
+      paymentMode = 'mixed'
+      document.querySelectorAll('.pay').forEach(x => x.classList.remove('active'))
+      commercialGiftAmount = Number(document.querySelector('#mixGift')?.value || 0)
+    } else {
+      paymentMode = 'card'
+      document.querySelectorAll('.pay').forEach(x => x.classList.toggle('active', x.dataset.pay === 'card'))
+      commercialGiftAmount = 0
+    }
+    renderCart()
   }
+  ;['mixCard','mixCash','mixCheque','mixGift'].forEach(id => {
+    const input = document.querySelector('#'+id)
+    if (input) input.oninput = () => {
+      if (id === 'mixGift') commercialGiftAmount = Math.max(0, Number(input.value || 0))
+      renderTicketSummary()
+    }
+  })
 
   document.querySelectorAll('.pay').forEach(btn => btn.onclick = () => {
     document.querySelectorAll('.pay').forEach(x => x.classList.remove('active'))
     btn.classList.add('active')
     paymentMode = btn.dataset.pay
     document.querySelector('#mixedBox').style.display = 'none'
+    commercialGiftAmount = paymentMode === 'gift' ? ticketAfterDiscountHt() : 0
+    renderCart()
   })
 
   document.querySelector('#exportProductsBtn').onclick = exportProducts
@@ -854,12 +940,13 @@ async function loadData() {
   organizationId = profileRes.data.organization_id
 
   const [
-    categoriesRes, productsRes, customersRes, settingsRes,
+    categoriesRes, productsRes, tiersRes, customersRes, settingsRes,
     loyaltyRes, salesRes, linesRes, paymentsRes, expensesRes,
     closingsRes, bankRes, rulesRes, forecastRes
   ] = await Promise.all([
     supabase.from('product_categories').select('id,name,active,sort_order').order('sort_order'),
     supabase.from('products').select('*').order('name'),
+    supabase.from('product_price_tiers').select('*').eq('active',true).order('quantity'),
     supabase.from('customers').select('*').order('display_name'),
     supabase.from('settings').select('*').single(),
     supabase.from('loyalty_events').select('*').order('created_at', { ascending: false }),
@@ -874,7 +961,7 @@ async function loadData() {
   ])
 
   const error = [
-    categoriesRes.error, productsRes.error, customersRes.error, settingsRes.error,
+    categoriesRes.error, productsRes.error, tiersRes.error, customersRes.error, settingsRes.error,
     loyaltyRes.error, salesRes.error, linesRes.error, paymentsRes.error, expensesRes.error,
     closingsRes.error, bankRes.error, rulesRes.error, forecastRes.error
   ].find(Boolean)
@@ -883,6 +970,7 @@ async function loadData() {
 
   categories = categoriesRes.data || []
   products = productsRes.data || []
+  productPriceTiers = tiersRes.data || []
   customers = customersRes.data || []
   settings = settingsRes.data
   loyaltyEvents = loyaltyRes.data || []
@@ -924,6 +1012,100 @@ function activeProducts() {
   return products.filter(p => p.active)
 }
 
+function tiersForProduct(productId) {
+  return productPriceTiers
+    .filter(t => t.product_id === productId && t.active !== false)
+    .sort((a,b) => num(a.quantity) - num(b.quantity))
+}
+
+function productPriceSummary(product) {
+  if (product.pricing_mode === 'free_unit') return 'Prix libre / unité'
+  if (product.pricing_mode === 'fixed_unit') return `${eur(product.sale_price_ht)} / unité`
+  const tiers = tiersForProduct(product.id)
+  if (!tiers.length) return `${eur(product.sale_price_ht)} / ${num(product.sale_price_basis) || 100} ${esc(product.stock_unit)}`
+  return tiers.map(t => `${num(t.quantity)} g : ${eur(t.price_ht)}`).join(' · ')
+}
+
+function interpolatedPriceHt(product, quantity) {
+  const qty = Math.max(0, num(quantity))
+  if (!qty) return 0
+  if (product.pricing_mode === 'fixed_unit') {
+    return Number((num(product.sale_price_ht) * qty / (num(product.sale_price_basis) || 1)).toFixed(2))
+  }
+  const tiers = tiersForProduct(product.id)
+  if (!tiers.length) {
+    return Number((num(product.sale_price_ht) * qty / (num(product.sale_price_basis) || 100)).toFixed(2))
+  }
+  const low = [...tiers].reverse().find(t => num(t.quantity) <= qty)
+  const high = tiers.find(t => num(t.quantity) >= qty)
+  let price = 0
+  if (!low && high) price = num(high.price_ht) * qty / num(high.quantity)
+  else if (low && !high) price = num(low.price_ht) * qty / num(low.quantity)
+  else if (low && high && num(low.quantity) === num(high.quantity)) price = num(low.price_ht)
+  else if (low && high) {
+    price = num(low.price_ht) +
+      ((qty-num(low.quantity))/(num(high.quantity)-num(low.quantity))) *
+      (num(high.price_ht)-num(low.price_ht))
+  }
+  return Number(price.toFixed(2))
+}
+
+function lineGrossHt(item) {
+  const product = products.find(p => p.id === item.id)
+  if (!product) return 0
+  if (product.pricing_mode === 'free_unit') return Number((num(item.unitPriceHt) * num(item.qty)).toFixed(2))
+  return interpolatedPriceHt(product, item.qty)
+}
+
+function lineCostHt(item) {
+  const product = products.find(p => p.id === item.id)
+  if (!product) return 0
+  return Number((num(product.purchase_price_ht) * num(item.qty) / (num(product.purchase_price_basis) || (product.stock_unit === 'g' ? 100 : 1))).toFixed(2))
+}
+
+function ticketGrossHt() {
+  return Number(cart.reduce((sum,item) => sum + lineGrossHt(item),0).toFixed(2))
+}
+
+function ticketDiscountHt() {
+  return Number((ticketGrossHt() * discountPercent / 100).toFixed(2))
+}
+
+function ticketAfterDiscountHt() {
+  return Math.max(0, Number((ticketGrossHt() - ticketDiscountHt()).toFixed(2)))
+}
+
+function ticketGiftHt() {
+  return Math.max(0, Math.min(ticketAfterDiscountHt(), Number(num(commercialGiftAmount).toFixed(2))))
+}
+
+function ticketTotal() {
+  return Math.max(0, Number((ticketAfterDiscountHt() - ticketGiftHt()).toFixed(2)))
+}
+
+function renderTicketSummary() {
+  const gross = ticketGrossHt()
+  const discount = ticketDiscountHt()
+  const gift = ticketGiftHt()
+  const net = ticketTotal()
+  const cost = cart.reduce((sum,item) => sum + lineCostHt(item),0)
+  const missingCost = cart.some(item => {
+    const p = products.find(x => x.id === item.id)
+    return p && !(num(p.purchase_price_ht) > 0)
+  })
+  const before = gross - cost
+  const after = net - cost
+
+  const totalEl = document.querySelector('#cartTotal')
+  if (totalEl) totalEl.textContent = eur(net)
+  if (document.querySelector('#cartSubtotal')) document.querySelector('#cartSubtotal').textContent = eur(gross)
+  if (document.querySelector('#discountDisplay')) document.querySelector('#discountDisplay').textContent = discount ? '- '+eur(discount) : eur(0)
+  if (document.querySelector('#giftDisplay')) document.querySelector('#giftDisplay').textContent = gift ? '- '+eur(gift) : eur(0)
+  if (document.querySelector('#marginBefore')) document.querySelector('#marginBefore').textContent = missingCost ? 'Partielle' : `${eur(before)} · ${gross ? (before/gross*100).toFixed(0) : 0} %`
+  if (document.querySelector('#marginAfter')) document.querySelector('#marginAfter').textContent = missingCost ? 'Partielle' : `${eur(after)} · ${net ? (after/net*100).toFixed(0) : 0} %`
+  if (document.querySelector('#marginHint')) document.querySelector('#marginHint').textContent = missingCost ? 'Prix d’achat manquant sur au moins un produit.' : 'Calculée à partir des coûts d’achat enregistrés.'
+}
+
 function renderSellProducts() {
   const input = document.querySelector('#sellSearch')
   const container = document.querySelector('#sellProducts')
@@ -935,7 +1117,7 @@ function renderSellProducts() {
     .map(p => `
       <button class="product-card" data-id="${p.id}">
         <b>${esc(p.name)}</b>
-        <span>${eur(p.sale_price_ht)} / ${num(p.sale_price_basis)} ${esc(p.stock_unit)}</span>
+        <span>${productPriceSummary(p)}</span>
         <small class="${num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
           ${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}
         </small>
@@ -948,10 +1130,25 @@ function renderSellProducts() {
 function addToCart(id) {
   const product = products.find(p => p.id === id)
   if (!product) return
-  const line = cart.find(item => item.id === id)
-  const defaultQty = product.stock_unit === 'g' ? 100 : 1
-  if (line) line.qty += defaultQty
-  else cart.push({ id, qty: defaultQty })
+
+  if (product.pricing_mode === 'free_unit') {
+    const raw = prompt(`Prix de vente pour « ${product.name} » (€ par unité) :`)
+    if (raw === null) return
+    const unitPriceHt = Number(String(raw).replace(',','.'))
+    if (!Number.isFinite(unitPriceHt) || unitPriceHt < 0) return alert('Prix invalide.')
+    const lineNote = prompt('Description facultative pour cette ligne :', '') || ''
+    cart.push({ id, qty:1, unitPriceHt, lineNote })
+    renderCart()
+    return
+  }
+
+  const tiers = tiersForProduct(id)
+  const defaultQty = product.pricing_mode === 'tiered_weight'
+    ? (tiers.find(t => num(t.quantity) === 100)?.quantity || tiers[0]?.quantity || 100)
+    : 1
+  const line = cart.find(item => item.id === id && item.unitPriceHt == null)
+  if (line) line.qty += num(defaultQty)
+  else cart.push({ id, qty:num(defaultQty) })
   renderCart()
 }
 
@@ -966,21 +1163,24 @@ function renderCart() {
   container.innerHTML = cart.map((item, index) => {
     const product = products.find(p => p.id === item.id)
     if (!product) return ''
-    const step = product.stock_unit === 'g' ? 50 : 1
+    const step = product.stock_unit === 'g' ? 25 : 1
     return `
       <div class="cartline">
         <div class="row space">
-          <b>${esc(product.name)}</b>
+          <div><b>${esc(product.name)}</b>${item.lineNote ? `<div class="small">${esc(item.lineNote)}</div>` : ''}</div>
           <button class="danger remove" data-i="${index}">×</button>
         </div>
         <div class="row space">
           <div class="qty">
             <button class="secondary minus" data-i="${index}">−${step}</button>
-            <input class="field qtyInput" data-i="${index}" type="number" min="1" value="${item.qty}">
+            <input class="field qtyInput" data-i="${index}" type="number" min="1" step="1" value="${item.qty}">
             <button class="secondary plus" data-i="${index}">+${step}</button>
             <span>${esc(product.stock_unit)}</span>
           </div>
-          <b>${eur(product.sale_price_ht * item.qty / (product.sale_price_basis || 100))}</b>
+          <div style="text-align:right">
+            <b>${eur(lineGrossHt(item))}</b>
+            <div class="small">${product.pricing_mode === 'tiered_weight' ? 'prix interpolé selon paliers' : product.pricing_mode === 'free_unit' ? `${eur(item.unitPriceHt)} / unité` : 'prix fixe'}</div>
+          </div>
         </div>
       </div>
     `
@@ -1012,15 +1212,7 @@ function renderCart() {
     renderCart()
   })
 
-  totalEl.textContent = eur(ticketTotal())
-}
-
-function ticketTotal() {
-  return cart.reduce((sum, item) => {
-    const product = products.find(p => p.id === item.id)
-    if (!product) return sum
-    return sum + product.sale_price_ht * item.qty / (product.sale_price_basis || 100)
-  }, 0)
+  renderTicketSummary()
 }
 
 function renderCustomerHints() {
@@ -1062,33 +1254,55 @@ async function completeSale() {
 
   for (const item of cart) {
     const product = products.find(p => p.id === item.id)
+    if (!product) return msg.textContent = 'Produit introuvable.'
     if (item.qty > num(product.stock_quantity)) {
       return msg.textContent = `Stock insuffisant pour ${product.name}.`
     }
   }
 
-  const total = Number(ticketTotal().toFixed(2))
+  const afterDiscount = ticketAfterDiscountHt()
+  let gift = 0
   let payRows = []
+  const mixed = document.querySelector('#mixedBox').style.display !== 'none'
 
-  if (document.querySelector('#mixedBox').style.display !== 'none') {
+  if (mixed) {
     const card = Number(document.querySelector('#mixCard').value || 0)
     const cash = Number(document.querySelector('#mixCash').value || 0)
-    if (Math.abs(card + cash - total) > 0.01) {
-      return msg.textContent = 'Le paiement mixte doit être égal au total.'
+    const cheque = Number(document.querySelector('#mixCheque').value || 0)
+    gift = Math.max(0, Number(document.querySelector('#mixGift').value || 0))
+    if (gift > afterDiscount + 0.01) return msg.textContent = 'Le montant offert dépasse le ticket.'
+    if (Math.abs(card + cash + cheque + gift - afterDiscount) > 0.01) {
+      return msg.textContent = 'CB + espèces + chèque + offert doivent être égaux au total après remise.'
     }
-    if (card > 0) payRows.push({ method: 'card', amount: card })
-    if (cash > 0) payRows.push({ method: 'cash', amount: cash })
+    if (card > 0) payRows.push({ method:'card', amount:card })
+    if (cash > 0) payRows.push({ method:'cash', amount:cash })
+    if (cheque > 0) payRows.push({ method:'cheque', amount:cheque })
+  } else if (paymentMode === 'gift') {
+    gift = afterDiscount
   } else {
-    payRows = [{ method: paymentMode, amount: total }]
+    gift = 0
+    const amount = Number((afterDiscount - gift).toFixed(2))
+    payRows = amount > 0 ? [{ method:paymentMode, amount }] : []
   }
+
+  commercialGiftAmount = gift
+  const total = Number((afterDiscount - gift).toFixed(2))
+  renderTicketSummary()
 
   const payload = {
     local_id: crypto.randomUUID(),
     created_at: new Date().toISOString(),
     customer_id: selectedCustomer?.id || null,
-    lines: cart.map(item => ({ product_id: item.id, quantity: item.qty })),
+    lines: cart.map(item => ({
+      product_id:item.id,
+      quantity:item.qty,
+      ...(item.unitPriceHt != null ? { unit_price_ht:item.unitPriceHt } : {}),
+      ...(item.lineNote ? { line_note:item.lineNote } : {})
+    })),
     payments: payRows,
-    note: null,
+    discount_percent: discountPercent,
+    commercial_gift_amount: gift,
+    note: gift > 0 ? 'Vente avec geste commercial offert' : null,
     total
   }
 
@@ -1103,10 +1317,12 @@ async function completeSale() {
 
   msg.textContent = 'Enregistrement…'
 
-  const { error } = await supabase.rpc('complete_sale', {
+  const { error } = await supabase.rpc('complete_sale_v2', {
     p_customer_id: payload.customer_id,
     p_lines: payload.lines,
     p_payments: payload.payments,
+    p_discount_percent: payload.discount_percent,
+    p_commercial_gift_amount: payload.commercial_gift_amount,
     p_note: payload.note
   })
 
@@ -1136,7 +1352,8 @@ function renderProducts() {
   const query = input.value.toLowerCase().trim()
   body.innerHTML = products.filter(p =>
     p.name.toLowerCase().includes(query) ||
-    String(p.sku || '').toLowerCase().includes(query)
+    String(p.sku || '').toLowerCase().includes(query) ||
+    String(p.subfamily || '').toLowerCase().includes(query)
   ).map(p => {
     const category = categories.find(c => c.id === p.category_id)?.name || '—'
     return `
@@ -1144,9 +1361,10 @@ function renderProducts() {
         <td>${esc(p.sku || '—')}</td>
         <td><b>${esc(p.name)}</b></td>
         <td>${esc(category)}</td>
+        <td>${esc(p.subfamily || '—')}</td>
         <td>${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}</td>
         <td>${eur(p.purchase_price_ht)}</td>
-        <td>${eur(p.sale_price_ht)}</td>
+        <td><span class="small">${productPriceSummary(p)}</span></td>
         <td>${boolLabel(p.loyalty_eligible)}</td>
         <td><span class="status ${p.active ? 'ok' : 'off'}">${p.active ? 'Actif' : 'Inactif'}</span></td>
       </tr>
@@ -1155,7 +1373,7 @@ function renderProducts() {
 }
 
 function loyaltyInfo(customerId) {
-  const required = Number(settings?.loyalty_visits_per_reward || 5)
+  const required = Number(settings?.loyalty_visits_per_reward || 10)
   const events = loyaltyEvents.filter(e => e.customer_id === customerId)
   const points = events.reduce((sum, event) => sum + Number(event.points_delta || 0), 0)
   const used = events.filter(e => e.event_type === 'reward_used').length
@@ -1401,26 +1619,45 @@ async function saveProduct() {
   const msg = document.querySelector('#productMsg')
   msg.textContent = ''
 
+  const pricingMode = document.querySelector('#pPricingMode').value
+  const stockUnit = pricingMode === 'tiered_weight' ? 'g' : 'unit'
+  const tiers = [
+    [25, Number(document.querySelector('#pPrice25').value || 0)],
+    [50, Number(document.querySelector('#pPrice50').value || 0)],
+    [100, Number(document.querySelector('#pPrice100').value || 0)],
+    [200, Number(document.querySelector('#pPrice200').value || 0)]
+  ].filter(([,price]) => price > 0).map(([quantity,price_ht]) => ({quantity,price_ht}))
+
+  const fallback = tiers.find(t => t.quantity === 100) || tiers[0]
   const payload = {
     organization_id: organizationId,
     name: document.querySelector('#pName').value.trim(),
     category_id: document.querySelector('#pCategory').value || null,
-    stock_unit: 'g',
-    purchase_unit: 'sachet',
-    purchase_unit_quantity: 500,
-    purchase_unit_stock_equivalent: 500,
+    subfamily: document.querySelector('#pSubfamily').value.trim() || null,
+    pricing_mode: pricingMode,
+    stock_unit: stockUnit,
+    purchase_unit: stockUnit === 'g' ? 'sachet' : 'unité',
+    purchase_unit_quantity: stockUnit === 'g' ? 500 : 1,
+    purchase_unit_stock_equivalent: stockUnit === 'g' ? 500 : 1,
     stock_quantity: Number(document.querySelector('#pStock').value || 0),
     stock_alert_threshold: Number(document.querySelector('#pThreshold').value || 0),
     purchase_price_ht: Number(document.querySelector('#pBuy').value || 0),
-    purchase_price_basis: 100,
-    sale_price_ht: Number(document.querySelector('#pSell').value || 0),
-    sale_price_basis: 100
+    purchase_price_basis: stockUnit === 'g' ? 100 : 1,
+    sale_price_ht: pricingMode === 'tiered_weight'
+      ? num(fallback?.price_ht)
+      : Number(document.querySelector('#pSell').value || 0),
+    sale_price_basis: pricingMode === 'tiered_weight'
+      ? num(fallback?.quantity || 100)
+      : 1
   }
 
   if (!payload.name) return msg.textContent = 'Nom obligatoire.'
+  if (pricingMode === 'tiered_weight' && !tiers.length) return msg.textContent = 'Ajoute au moins un prix par palier.'
 
-  const { error } = await supabase.from('products').insert(payload)
+  const { data:created, error } = await supabase.from('products').insert(payload).select('id').single()
   if (error) return msg.textContent = error.message
+
+  if (tiers.length) await syncProductTiers(created.id, tiers)
 
   document.querySelector('#productDialog').close()
   await loadData()
@@ -1460,8 +1697,19 @@ function clearSaleForm() {
   if (selected) selected.style.display = 'none'
   const mixCard = document.querySelector('#mixCard')
   const mixCash = document.querySelector('#mixCash')
+  const mixCheque = document.querySelector('#mixCheque')
+  const mixGift = document.querySelector('#mixGift')
   if (mixCard) mixCard.value = ''
   if (mixCash) mixCash.value = ''
+  if (mixCheque) mixCheque.value = ''
+  if (mixGift) mixGift.value = ''
+  discountPercent = 0
+  commercialGiftAmount = 0
+  paymentMode = 'card'
+  document.querySelectorAll('.discount-btn').forEach(x => x.classList.toggle('active', x.dataset.discount === '0'))
+  if (document.querySelector('#customDiscount')) document.querySelector('#customDiscount').value = ''
+  document.querySelectorAll('.pay').forEach(x => x.classList.toggle('active', x.dataset.pay === 'card'))
+  if (document.querySelector('#mixedBox')) document.querySelector('#mixedBox').style.display = 'none'
   renderCart()
 }
 
@@ -1485,6 +1733,7 @@ function saveOfflineSnapshot() {
     saved_at: new Date().toISOString(),
     organization_id: organizationId,
     products,
+    productPriceTiers,
     customers,
     categories,
     settings,
@@ -1499,6 +1748,7 @@ function useOfflineSnapshot() {
   if (!offlineSnapshot) return false
   organizationId = offlineSnapshot.organization_id
   products = offlineSnapshot.products || []
+  productPriceTiers = offlineSnapshot.productPriceTiers || []
   customers = offlineSnapshot.customers || []
   categories = offlineSnapshot.categories || []
   settings = offlineSnapshot.settings || {}
@@ -1564,10 +1814,13 @@ async function syncOfflineQueue() {
 
   const remaining = []
   for (const item of offlineQueue) {
-    const { error } = await supabase.rpc('complete_sale', {
+    const { error } = await supabase.rpc('complete_sale_v2_offline_idempotent', {
+      p_local_id: item.local_id,
       p_customer_id: item.customer_id,
       p_lines: item.lines,
       p_payments: item.payments,
+      p_discount_percent: item.discount_percent || 0,
+      p_commercial_gift_amount: item.commercial_gift_amount || 0,
       p_note: item.note || `Vente hors ligne ${item.local_id}`
     })
     if (error) {
@@ -1635,7 +1888,7 @@ function renderBackupPanel() {
   const techRows = document.querySelector('#backupTechRows')
   if (techRows) {
     techRows.innerHTML = `
-      <tr><td>Version application</td><td>Sprint 5</td></tr>
+      <tr><td>Version application</td><td>Sprint 6A</td></tr>
       <tr><td>Organisation</td><td>${esc(organizationId || '—')}</td></tr>
       <tr><td>Snapshot hors ligne</td><td>${offlineSnapshot?.saved_at ? fmtDateTime(offlineSnapshot.saved_at) : 'Non disponible'}</td></tr>
       <tr><td>Produits mémorisés</td><td>${offlineSnapshot?.products?.length ?? products.length}</td></tr>
@@ -1672,7 +1925,7 @@ async function exportFullBackup() {
   }
 
   const tables = [
-    'organizations','user_profiles','settings','product_categories','products',
+    'organizations','user_profiles','settings','product_categories','products','product_price_tiers',
     'customers','loyalty_events','sales','sale_lines','payments','stock_movements',
     'cash_closings','bank_transactions','bank_category_rules','forecast_events',
     'management_expenses'
@@ -1763,19 +2016,24 @@ function downloadCsv(filename, headers, rows) {
 
 function exportProducts() {
   const headers = [
-    'sku','name','category','active','stock_unit','purchase_unit',
-    'purchase_unit_quantity','purchase_unit_stock_equivalent','stock_quantity',
-    'stock_alert_threshold','purchase_price_ht','purchase_price_basis',
-    'sale_price_ht','sale_price_basis','vat_rate_purchase','vat_rate_sale',
+    'sku','name','category','subfamily','active','stock_unit','pricing_mode',
+    'sale_price_25g_ht','sale_price_50g_ht','sale_price_100g_ht','sale_price_200g_ht','sale_price_unit_ht',
+    'sale_price_ht','sale_price_basis','purchase_unit','purchase_unit_quantity',
+    'purchase_unit_stock_equivalent','stock_quantity','stock_alert_threshold',
+    'purchase_price_ht','purchase_price_basis','vat_rate_purchase','vat_rate_sale',
     'loyalty_eligible','loyalty_reward_quantity'
   ]
 
+  const tierValue=(productId,quantity)=>tiersForProduct(productId).find(t=>num(t.quantity)===quantity)?.price_ht ?? ''
   const rows = products.map(p => [
-    p.sku, p.name, categories.find(c => c.id === p.category_id)?.name || '',
-    p.active, p.stock_unit, p.purchase_unit, p.purchase_unit_quantity,
-    p.purchase_unit_stock_equivalent, p.stock_quantity, p.stock_alert_threshold,
-    p.purchase_price_ht, p.purchase_price_basis, p.sale_price_ht, p.sale_price_basis,
-    p.vat_rate_purchase, p.vat_rate_sale, p.loyalty_eligible, p.loyalty_reward_quantity
+    p.sku,p.name,categories.find(c => c.id === p.category_id)?.name || '',p.subfamily || '',
+    p.active,p.stock_unit,p.pricing_mode || 'tiered_weight',
+    tierValue(p.id,25),tierValue(p.id,50),tierValue(p.id,100),tierValue(p.id,200),
+    p.pricing_mode === 'fixed_unit' ? p.sale_price_ht : '',
+    p.sale_price_ht,p.sale_price_basis,p.purchase_unit,p.purchase_unit_quantity,
+    p.purchase_unit_stock_equivalent,p.stock_quantity,p.stock_alert_threshold,
+    p.purchase_price_ht,p.purchase_price_basis,p.vat_rate_purchase,p.vat_rate_sale,
+    p.loyalty_eligible,p.loyalty_reward_quantity
   ])
 
   downloadCsv(`produits_${todayStamp()}.csv`, headers, rows)
@@ -1949,45 +2207,71 @@ function analyzeProductImport(rows) {
       return
     }
 
+    const hasTierColumns = ['sale_price_25g_ht','sale_price_50g_ht','sale_price_100g_ht','sale_price_200g_ht']
+      .some(key => Object.prototype.hasOwnProperty.call(row,key))
+    const tiers = [
+      [25,parseNumber(row.sale_price_25g_ht,0)],
+      [50,parseNumber(row.sale_price_50g_ht,0)],
+      [100,parseNumber(row.sale_price_100g_ht,0)],
+      [200,parseNumber(row.sale_price_200g_ht,0)]
+    ].filter(([,price]) => price > 0).map(([quantity,price_ht]) => ({quantity,price_ht}))
+
+    const pricingMode = String(row.pricing_mode || (tiers.length ? 'tiered_weight' : 'tiered_weight')).trim()
+    if (!['tiered_weight','fixed_unit','free_unit'].includes(pricingMode)) {
+      errors.push(`Ligne ${lineNo} : mode de tarification inconnu "${pricingMode}".`)
+      return
+    }
+
+    const fallback = tiers.find(t => t.quantity === 100) || tiers[0]
+    const stockUnit = row.stock_unit || (pricingMode === 'tiered_weight' ? 'g' : 'unit')
     const payload = {
       organization_id: organizationId,
       sku: sku || null,
       name,
       category_id: category?.id || null,
+      subfamily: String(row.subfamily || '').trim() || null,
+      pricing_mode: pricingMode,
       active: parseBoolean(row.active, true),
-      stock_unit: row.stock_unit || 'g',
-      purchase_unit: row.purchase_unit || 'sachet',
-      purchase_unit_quantity: parseNumber(row.purchase_unit_quantity, 500),
-      purchase_unit_stock_equivalent: parseNumber(row.purchase_unit_stock_equivalent, 500),
+      stock_unit: stockUnit,
+      purchase_unit: row.purchase_unit || (stockUnit === 'g' ? 'sachet' : 'unité'),
+      purchase_unit_quantity: parseNumber(row.purchase_unit_quantity, stockUnit === 'g' ? 500 : 1),
+      purchase_unit_stock_equivalent: parseNumber(row.purchase_unit_stock_equivalent, stockUnit === 'g' ? 500 : 1),
       stock_quantity: parseNumber(row.stock_quantity, 0),
       stock_alert_threshold: parseNumber(row.stock_alert_threshold, 0),
       purchase_price_ht: parseNumber(row.purchase_price_ht, 0),
-      purchase_price_basis: parseNumber(row.purchase_price_basis, 100),
-      sale_price_ht: parseNumber(row.sale_price_ht, 0),
-      sale_price_basis: parseNumber(row.sale_price_basis, 100),
+      purchase_price_basis: parseNumber(row.purchase_price_basis, stockUnit === 'g' ? 100 : 1),
+      sale_price_ht: parseNumber(row.sale_price_ht,
+        pricingMode === 'fixed_unit' ? parseNumber(row.sale_price_unit_ht,0) : num(fallback?.price_ht)),
+      sale_price_basis: parseNumber(row.sale_price_basis,
+        pricingMode === 'tiered_weight' ? num(fallback?.quantity || 100) : 1),
       vat_rate_purchase: parseNumber(row.vat_rate_purchase, 0),
       vat_rate_sale: parseNumber(row.vat_rate_sale, 0),
       loyalty_eligible: parseBoolean(row.loyalty_eligible, false),
-      loyalty_reward_quantity: parseNumber(row.loyalty_reward_quantity, 100)
+      loyalty_reward_quantity: parseNumber(row.loyalty_reward_quantity, stockUnit === 'g' ? 100 : 1)
     }
+
+    const enrich = item => ({...item,_tiers:tiers,_tiersProvided:hasTierColumns})
 
     if (!sku) {
       if (products.some(p => p.name.trim().toLowerCase() === name.toLowerCase())) {
         errors.push(`Ligne ${lineNo} : "${name}" existe déjà mais la référence sku est vide. Utilise sa référence existante pour éviter un doublon.`)
         return
       }
-      creates.push({ ...payload, _action: 'Créer', _code: '', _name: name })
+      creates.push(enrich({ ...payload, _action:'Créer', _code:'', _name:name }))
       return
     }
 
     const existing = bySku.get(sku)
     if (!existing) {
-      creates.push({ ...payload, _action: 'Créer', _code: sku, _name: name })
+      creates.push(enrich({ ...payload, _action:'Créer', _code:sku, _name:name }))
       return
     }
 
-    const changed = productChanged(existing, payload)
-    const item = { ...payload, id: existing.id, _action: changed ? 'Modifier' : 'Inchangé', _code: sku, _name: name }
+    const currentTiers = tiersForProduct(existing.id).map(t => [num(t.quantity),num(t.price_ht)])
+    const incomingTiers = tiers.map(t => [num(t.quantity),num(t.price_ht)])
+    const tierChanged = hasTierColumns && JSON.stringify(currentTiers) !== JSON.stringify(incomingTiers)
+    const changed = productChanged(existing,payload) || tierChanged
+    const item = enrich({ ...payload, id:existing.id, _action:changed ? 'Modifier':'Inchangé', _code:sku, _name:name })
     ;(changed ? updates : unchanged).push(item)
   })
 
@@ -1996,13 +2280,28 @@ function analyzeProductImport(rows) {
 
 function productChanged(existing, payload) {
   const fields = [
-    'name','category_id','active','stock_unit','purchase_unit',
+    'name','category_id','subfamily','pricing_mode','active','stock_unit','purchase_unit',
     'purchase_unit_quantity','purchase_unit_stock_equivalent','stock_quantity',
     'stock_alert_threshold','purchase_price_ht','purchase_price_basis',
     'sale_price_ht','sale_price_basis','vat_rate_purchase','vat_rate_sale',
     'loyalty_eligible','loyalty_reward_quantity'
   ]
   return fields.some(field => String(existing[field] ?? '') !== String(payload[field] ?? ''))
+}
+
+async function syncProductTiers(productId, tiers) {
+  const { error:deleteError } = await supabase.from('product_price_tiers').delete().eq('product_id',productId)
+  if (deleteError) throw deleteError
+  if (!tiers?.length) return
+  const payload = tiers.map(t => ({
+    organization_id:organizationId,
+    product_id:productId,
+    quantity:num(t.quantity),
+    price_ht:num(t.price_ht),
+    active:true
+  }))
+  const { error } = await supabase.from('product_price_tiers').insert(payload)
+  if (error) throw error
 }
 
 function analyzeClientImport(rows) {
@@ -2062,15 +2361,17 @@ async function applyImport() {
   try {
     if (pendingImport.type === 'products') {
       for (const item of pendingImport.updates) {
-        const { id, _action, _code, _name, ...payload } = item
+        const { id, _action, _code, _name, _tiers, _tiersProvided, ...payload } = item
         const { error } = await supabase.from('products').update(payload).eq('id', id)
         if (error) throw error
+        if (_tiersProvided) await syncProductTiers(id,_tiers)
       }
       for (const item of pendingImport.creates) {
-        const { _action, _code, _name, ...payload } = item
+        const { _action, _code, _name, _tiers, _tiersProvided, ...payload } = item
         if (!payload.sku) delete payload.sku
-        const { error } = await supabase.from('products').insert(payload)
+        const { data:created, error } = await supabase.from('products').insert(payload).select('id').single()
         if (error) throw error
+        if (_tiersProvided) await syncProductTiers(created.id,_tiers)
       }
     } else {
       for (const item of pendingImport.updates) {
@@ -3076,7 +3377,7 @@ function renderSettings() {
   if (!section || !settings) return
 
   const loyalty = document.querySelector('#settingLoyaltyVisits')
-  if (loyalty) loyalty.value = Number(settings.loyalty_visits_per_reward || 5)
+  if (loyalty) loyalty.value = Number(settings.loyalty_visits_per_reward || 10)
 
   const start = document.querySelector('#appSettingActivityStart')
   const social = document.querySelector('#appSettingSocialRate')
@@ -3207,6 +3508,25 @@ async function saveAppSettings() {
   if (error) return msg.textContent = 'Erreur : ' + error.message
 
   msg.textContent = 'Paramètres enregistrés.'
+  await loadData()
+}
+
+async function saveLoyaltySettings() {
+  const msg = document.querySelector('#loyaltyMsg')
+  const visits = Number(document.querySelector('#settingLoyaltyVisits').value || 10)
+  if (!(visits > 0)) return msg.textContent = 'Nombre de passages invalide.'
+  msg.textContent = 'Enregistrement…'
+  const { error } = await supabase.rpc('update_app_settings', {
+    p_loyalty_visits_per_reward: visits,
+    p_activity_start_date: settings.activity_start_date || null,
+    p_micro_social_rate: num(settings.micro_social_rate),
+    p_income_tax_rate: num(settings.income_tax_rate),
+    p_vat_base_threshold: num(settings.vat_base_threshold),
+    p_vat_major_threshold: num(settings.vat_major_threshold),
+    p_micro_threshold: num(settings.micro_threshold)
+  })
+  if (error) return msg.textContent = 'Erreur : '+error.message
+  msg.textContent = 'Fidélité enregistrée.'
   await loadData()
 }
 
