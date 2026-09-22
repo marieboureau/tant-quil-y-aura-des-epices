@@ -303,7 +303,7 @@ begin
     select jsonb_build_object(
       'id',sl.id,'gross_ht',sl.gross_line_total_ht,'gross_ttc',sl.gross_line_total_ttc
     )
-    from public.sale_lines sl where sl.sale_id=v_sale order by sl.created_at,sl.id
+    from public.sale_lines sl where sl.sale_id=v_sale order by sl.id
   loop
     v_idx := v_idx + 1;
     v_ratio := case when v_total_gross_ttc=0 then 0
