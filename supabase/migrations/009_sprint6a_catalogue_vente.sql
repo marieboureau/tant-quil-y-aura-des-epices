@@ -101,6 +101,7 @@ alter table public.sales add column if not exists discount_amount_ttc numeric no
 alter table public.sales add column if not exists commercial_gift_amount_ht numeric not null default 0;
 alter table public.sales add column if not exists commercial_gift_amount_ttc numeric not null default 0;
 
+alter table public.sale_lines add column if not exists line_cost_ht numeric;
 alter table public.sale_lines add column if not exists gross_line_total_ht numeric;
 alter table public.sale_lines add column if not exists gross_line_total_ttc numeric;
 alter table public.sale_lines add column if not exists discount_amount_ht numeric not null default 0;
@@ -368,7 +369,7 @@ begin
       reference_sale_id,customer_id,created_by,note
     ) values(
       v_org,v_product.id,
-      case when v_total_net_ttc=0 then 'commercial_gift' else 'sale' end,
+      'sale',
       -v_qty,v_product.stock_unit,v_sale,p_customer_id,auth.uid(),
       case when v_total_gift_ttc>0 then 'Vente avec montant offert' else null end
     );
