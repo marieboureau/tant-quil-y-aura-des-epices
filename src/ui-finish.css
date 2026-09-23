@@ -255,3 +255,27 @@ aside > .sub{
   .product-form-grid{grid-template-columns:1fr}
   .product-dialog-card{width:min(96vw,760px)}
 }
+
+
+/* Sprint 6A.2 — lisibilité du bloc marge */
+.margin-panel > .row.space{
+  align-items:flex-start;
+  flex-wrap:wrap;
+  gap:3px 10px;
+}
+.margin-panel > .row.space b{
+  display:block;
+  min-width:100%;
+  margin-top:2px;
+  font-size:18px;
+  line-height:1.2;
+}
+.margin-panel > .row.space + .row.space{
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid var(--line);
+}
+.margin-panel #marginHint{
+  margin-top:6px;
+  line-height:1.35;
+}
