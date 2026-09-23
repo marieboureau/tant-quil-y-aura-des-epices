@@ -403,3 +403,27 @@ aside > .sub{
     grid-template-columns:1fr;
   }
 }
+
+
+/* Sprint 6B.2 révisé — lecture URSSAF / Caisse banc */
+.urssaf-dual{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+}
+.urssaf-panel{
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:12px;
+  background:#fff;
+}
+.urssaf-panel h3{
+  margin:0 0 8px;
+  font-size:17px;
+}
+.caisse-banc-panel{
+  background:#faf7f2;
+}
+@media(max-width:800px){
+  .urssaf-dual{grid-template-columns:1fr}
+}
