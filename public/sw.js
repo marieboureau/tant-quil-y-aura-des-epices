@@ -1,9 +1,10 @@
-const CACHE = 'epices-app-v1'
+const CACHE = 'epices-app-v2'
 const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
-  '/icon.svg'
+  '/icon.svg',
+  '/logo.png'
 ]
 
 self.addEventListener('install', event => {

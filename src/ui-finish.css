@@ -178,3 +178,59 @@ aside > .sub{
   #sell .total{font-size:27px}
   .actions{width:100%}
 }
+
+
+/* Sprint 6A — vente, remises, marge et paliers */
+#sell .payments{
+  grid-template-columns:repeat(4,1fr);
+}
+.sale-adjustments{
+  display:grid;
+  grid-template-columns:1.15fr .85fr;
+  gap:12px;
+  margin-top:12px;
+}
+.discount-buttons{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  margin-top:5px;
+}
+.discount-buttons .discount-btn{
+  min-width:58px;
+}
+.discount-buttons .discount-btn.active{
+  border-color:var(--accent);
+  box-shadow:0 0 0 2px rgba(117,86,56,.12);
+}
+.discount-custom{
+  width:96px;
+}
+.margin-panel{
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:10px 12px;
+  background:#faf7f2;
+}
+.ticket-adjustments{
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px dashed var(--line);
+  display:grid;
+  gap:4px;
+  font-size:13px;
+}
+.tier-editor{
+  grid-template-columns:repeat(4,1fr);
+}
+#sell .product-card span{
+  line-height:1.35;
+}
+@media(max-width:900px){
+  .sale-adjustments{grid-template-columns:1fr}
+  .tier-editor{grid-template-columns:1fr 1fr}
+}
+@media(max-width:600px){
+  #sell .payments{grid-template-columns:1fr 1fr}
+  .discount-buttons .secondary{min-height:38px}
+}
