@@ -326,3 +326,11 @@ aside > .sub{
 @media(max-width:500px){
   #remittances .kpi-grid{grid-template-columns:1fr}
 }
+
+.remittance-selection-total{
+  margin-top:10px;
+  padding:8px 10px;
+  border-radius:9px;
+  background:#f7f2ea;
+  font-size:13px;
+}
