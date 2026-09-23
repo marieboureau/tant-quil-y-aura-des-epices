@@ -366,3 +366,64 @@ aside > .sub{
     grid-column:auto;
   }
 }
+
+
+/* Sprint 6B.2 — cible de fonds de caisse en montant ou en % */
+#remittances .remittance-toolbar{
+  align-items:start;
+}
+#remittances .cash-float-settings{
+  display:grid;
+  grid-template-columns:minmax(150px,1fr) minmax(170px,1fr) minmax(180px,.9fr) auto;
+  gap:10px;
+  align-items:end;
+}
+#remittances .cash-float-proposal{
+  min-height:52px;
+  padding:8px 10px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:#faf7f2;
+}
+#remittances .cash-float-proposal b{
+  display:block;
+  margin-top:3px;
+  font-size:18px;
+}
+#remittances #cashFloatMsg{
+  grid-column:1/-1;
+}
+@media(max-width:1200px){
+  #remittances .cash-float-settings{
+    grid-template-columns:1fr 1fr;
+  }
+}
+@media(max-width:700px){
+  #remittances .cash-float-settings{
+    grid-template-columns:1fr;
+  }
+}
+
+
+/* Sprint 6B.2 révisé — lecture URSSAF / Caisse banc */
+.urssaf-dual{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+}
+.urssaf-panel{
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:12px;
+  background:#fff;
+}
+.urssaf-panel h3{
+  margin:0 0 8px;
+  font-size:17px;
+}
+.caisse-banc-panel{
+  background:#faf7f2;
+}
+@media(max-width:800px){
+  .urssaf-dual{grid-template-columns:1fr}
+}

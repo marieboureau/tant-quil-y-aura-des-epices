@@ -23,6 +23,7 @@ supabase.rpc = (name, args = {}, options) => {
 
 const num = v => Number(v || 0)
 const eur = v => num(v).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})
+const eur0 = v => Math.round(num(v)).toLocaleString('fr-FR')+' €'
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))
 const monthNames = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc']
 let enhanceTimer = null
@@ -182,18 +183,24 @@ async function enhanceSaleLineStatuses(){
 // ------------------------------------------------------------------
 async function fetchPilotageData(){
   const year=new Date().getFullYear()
-  const [{data:sales},{data:payments},{data:lines},{data:expenses},{data:settings}]=await Promise.all([
+  const [
+    {data:sales},{data:payments},{data:lines},{data:expenses},{data:settings},
+    {data:remittanceBatches},{data:remittanceItems}
+  ]=await Promise.all([
     supabase.from('sales').select('*').eq('status','completed').gte('sold_at',`${year}-01-01T00:00:00`).lt('sold_at',`${year+1}-01-01T00:00:00`),
     supabase.from('payments').select('*'),
     supabase.from('sale_lines').select('*'),
     supabase.from('management_expenses').select('*').gte('expense_date',`${year}-01-01`).lte('expense_date',`${year}-12-31`),
-    supabase.from('settings').select('*').single()
+    supabase.from('settings').select('*').single(),
+    supabase.from('remittance_batches').select('id,remittance_number,status'),
+    supabase.from('remittance_items').select('batch_id,payment_id,amount')
   ])
 
   const monthly=Array.from({length:12},(_,month)=>({
-    month,ca:0,caHt:0,card:0,cheque:0,cash:0,cost:0,expenses:0
+    month,ca:0,caHt:0,card:0,cheque:0,cash:0,caisseN:0,cost:0,expenses:0
   }))
   const saleMap=new Map((sales||[]).map(s=>[s.id,s]))
+  const paymentMap=new Map((payments||[]).map(p=>[p.id,p]))
 
   for(const s of sales||[]){
     const m=new Date(s.sold_at).getMonth()
@@ -201,17 +208,30 @@ async function fetchPilotageData(){
     monthly[m].caHt+=num(s.total_ht)
   }
   for(const p of payments||[]){
-    const s=saleMap.get(p.sale_id)
-    if(!s || (p.status && p.status!=='completed'))continue
-    const m=new Date(s.sold_at).getMonth()
+    const sale=saleMap.get(p.sale_id)
+    if(!sale || (p.status && p.status!=='completed'))continue
+    const m=new Date(sale.sold_at).getMonth()
     if(p.payment_method==='card')monthly[m].card+=num(p.amount)
     if(p.payment_method==='cheque')monthly[m].cheque+=num(p.amount)
     if(p.payment_method==='cash')monthly[m].cash+=num(p.amount)
   }
+
+  const caisseBatchIds=new Set((remittanceBatches||[])
+    .filter(b=>b.status!=='cancelled' && /^CAISSE\s+N\d{4}/i.test(String(b.remittance_number||'').trim()))
+    .map(b=>b.id))
+
+  for(const item of remittanceItems||[]){
+    if(!caisseBatchIds.has(item.batch_id))continue
+    const payment=paymentMap.get(item.payment_id)
+    const sale=payment ? saleMap.get(payment.sale_id) : null
+    if(!sale)continue
+    monthly[new Date(sale.sold_at).getMonth()].caisseN+=num(item.amount)
+  }
+
   for(const line of lines||[]){
-    const s=saleMap.get(line.sale_id)
-    if(!s)continue
-    monthly[new Date(s.sold_at).getMonth()].cost+=num(line.line_cost_ht)
+    const sale=saleMap.get(line.sale_id)
+    if(!sale)continue
+    monthly[new Date(sale.sold_at).getMonth()].cost+=num(line.line_cost_ht)
   }
   for(const e of expenses||[]){
     monthly[new Date(e.expense_date+'T00:00:00').getMonth()].expenses+=num(e.amount)
@@ -221,6 +241,7 @@ async function fetchPilotageData(){
   const tr=num(settings?.income_tax_rate)/100
   for(const m of monthly){
     m.nonCash=m.card+m.cheque
+    m.managementCa=Math.max(0,m.ca-m.caisseN)
     m.gross=m.caHt-m.cost
     m.grossRate=m.caHt?m.gross/m.caHt*100:0
     m.social=m.ca*sr
@@ -296,16 +317,16 @@ function renderStackedChart(monthly){
 
 function gauge(label,value,threshold){
   const pct=threshold?Math.min(100,value/threshold*100):0
-  return `<div class="gauge-block"><div class="row space"><b>${esc(label)}</b><span>${eur(value)} / ${eur(threshold)}</span></div><div class="gauge"><span style="width:${pct}%"></span></div><div class="small">${pct.toFixed(1)} % du seuil</div></div>`
+  return `<div class="gauge-block"><div class="row space"><b>${esc(label)}</b><span>${eur0(value)} / ${eur0(threshold)}</span></div><div class="gauge"><span style="width:${pct}%"></span></div><div class="small">${pct.toFixed(1)} % du seuil</div></div>`
 }
 
 function renderDualThresholds(monthly,settings){
   const box=document.querySelector('#thresholdsBox')
   if(!box)return
   const current=monthly.slice(0,new Date().getMonth()+1)
-  const total=current.reduce((s,m)=>s+m.ca,0)
-  const nonCash=current.reduce((s,m)=>s+m.nonCash,0)
-  const cash=current.reduce((s,m)=>s+m.cash,0)
+  const total=current.reduce((sum,m)=>sum+m.ca,0)
+  const caisseN=current.reduce((sum,m)=>sum+m.caisseN,0)
+  const managementCa=Math.max(0,total-caisseN)
   const thresholds=[
     ['TVA — seuil de base',num(settings?.vat_base_threshold)],
     ['TVA — seuil majoré',num(settings?.vat_major_threshold)],
@@ -314,10 +335,16 @@ function renderDualThresholds(monthly,settings){
   const title=box.closest('.card')?.querySelector('h2')
   if(title)title.textContent='Seuils & suivi des encaissements'
   box.innerHTML=`<div class="ux2-thresholds">
-    <div><h3>CA total encaissé — référence officielle</h3>${thresholds.map(([l,t])=>gauge(l,total,t)).join('')}</div>
-    <div><h3>Lecture de gestion — CB + chèques</h3>${thresholds.map(([l,t])=>gauge(l,nonCash,t)).join('')}<div class="small">Espèces encaissées : <b>${eur(cash)}</b></div></div>
-  </div>
-  <div class="notice" style="margin-top:12px">La déclaration URSSAF et les seuils réglementaires restent calculés sur le <b>CA total effectivement encaissé</b>, espèces comprises. La colonne CB + chèques est uniquement une lecture interne de gestion.</div>`
+    <div>
+      <h3>CA total encaissé</h3>
+      ${thresholds.map(([label,threshold])=>gauge(label,total,threshold)).join('')}
+    </div>
+    <div>
+      <h3>CA encaissé moins Caisse banc</h3>
+      ${thresholds.map(([label,threshold])=>gauge(label,managementCa,threshold)).join('')}
+      <div class="small">Caisse banc : <b>${eur(caisseN)}</b></div>
+    </div>
+  </div>`
 }
 
 function renderManagement(monthly){
@@ -325,19 +352,21 @@ function renderManagement(monthly){
   if(!body)return
   const current=monthly.slice(0,new Date().getMonth()+1)
   const head=body.closest('table')?.querySelector('thead')
-  if(head)head.innerHTML='<tr><th>Mois</th><th>CA total</th><th>dont CB + chèques</th><th>dont espèces</th><th>Achats consommés</th><th>Marge brute</th><th>Taux marge brute</th><th>Autres dépenses</th><th>Cotisations estimées</th><th>Versement libératoire estimé</th><th>Solde gestion estimé</th><th>Marge nette</th></tr>'
+  if(head)head.innerHTML='<tr><th>Mois</th><th>CA total</th><th>Caisse banc</th><th>CA après Caisse banc</th><th>dont espèces</th><th>Achats consommés</th><th>Marge brute</th><th>Taux marge brute</th><th>Autres dépenses</th><th>Cotisations estimées</th><th>Versement libératoire estimé</th><th>Solde gestion estimé</th><th>Marge nette</th></tr>'
 
   const total=current.reduce((a,m)=>({
-    ca:a.ca+m.ca,nonCash:a.nonCash+m.nonCash,cash:a.cash+m.cash,cost:a.cost+m.cost,caHt:a.caHt+m.caHt,gross:a.gross+m.gross,expenses:a.expenses+m.expenses,social:a.social+m.social,tax:a.tax+m.tax,net:a.net+m.net
-  }),{ca:0,nonCash:0,cash:0,cost:0,caHt:0,gross:0,expenses:0,social:0,tax:0,net:0})
+    ca:a.ca+m.ca,caisseN:a.caisseN+m.caisseN,managementCa:a.managementCa+m.managementCa,
+    cash:a.cash+m.cash,cost:a.cost+m.cost,caHt:a.caHt+m.caHt,gross:a.gross+m.gross,
+    expenses:a.expenses+m.expenses,social:a.social+m.social,tax:a.tax+m.tax,net:a.net+m.net
+  }),{ca:0,caisseN:0,managementCa:0,cash:0,cost:0,caHt:0,gross:0,expenses:0,social:0,tax:0,net:0})
   const grossRate=total.caHt?total.gross/total.caHt*100:0
   const netRate=total.ca?total.net/total.ca*100:0
 
   body.innerHTML=current.map(m=>`<tr>
-    <td>${monthNames[m.month]}</td><td>${eur(m.ca)}</td><td>${eur(m.nonCash)}</td><td>${eur(m.cash)}</td>
+    <td>${monthNames[m.month]}</td><td>${eur(m.ca)}</td><td>${eur(m.caisseN)}</td><td>${eur(m.managementCa)}</td><td>${eur(m.cash)}</td>
     <td>${eur(m.cost)}</td><td>${eur(m.gross)}</td><td>${m.grossRate.toFixed(1)} %</td><td>${eur(m.expenses)}</td>
     <td>${eur(m.social)}</td><td>${eur(m.tax)}</td><td><b>${eur(m.net)}</b></td><td>${m.netRate.toFixed(1)} %</td>
-  </tr>`).join('')+`<tr class="total-row"><td><b>Cumul</b></td><td><b>${eur(total.ca)}</b></td><td><b>${eur(total.nonCash)}</b></td><td><b>${eur(total.cash)}</b></td><td><b>${eur(total.cost)}</b></td><td><b>${eur(total.gross)}</b></td><td><b>${grossRate.toFixed(1)} %</b></td><td><b>${eur(total.expenses)}</b></td><td><b>${eur(total.social)}</b></td><td><b>${eur(total.tax)}</b></td><td><b>${eur(total.net)}</b></td><td><b>${netRate.toFixed(1)} %</b></td></tr>`
+  </tr>`).join('')+`<tr class="total-row"><td><b>Cumul</b></td><td><b>${eur(total.ca)}</b></td><td><b>${eur(total.caisseN)}</b></td><td><b>${eur(total.managementCa)}</b></td><td><b>${eur(total.cash)}</b></td><td><b>${eur(total.cost)}</b></td><td><b>${eur(total.gross)}</b></td><td><b>${grossRate.toFixed(1)} %</b></td><td><b>${eur(total.expenses)}</b></td><td><b>${eur(total.social)}</b></td><td><b>${eur(total.tax)}</b></td><td><b>${eur(total.net)}</b></td><td><b>${netRate.toFixed(1)} %</b></td></tr>`
 }
 
 // ------------------------------------------------------------------
