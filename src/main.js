@@ -169,7 +169,7 @@ function renderShell() {
                 <div class="margin-panel">
                   <div class="small">Marge ticket estimée</div>
                   <div class="row space"><span>Avant geste</span><b id="marginBefore">—</b></div>
-                  <div class="row space"><span>Après remise / offert</span><b id="marginAfter">—</b></div>
+                  <div class="row space"><span id="marginAfterLabel">Après remise / offert</span><b id="marginAfter">—</b></div>
                   <div id="marginHint" class="small"></div>
                 </div>
               </div>
@@ -711,34 +711,64 @@ function renderShell() {
     </div>
 
     <dialog id="productDialog">
-      <form method="dialog" class="card dialog-card">
+      <form method="dialog" class="card dialog-card product-dialog-card">
         <h2>Nouveau produit</h2>
+
         <label class="small">Nom</label>
-        <input id="pName" class="field">
-        <label class="small">Catégorie</label>
-        <select id="pCategory" class="field"></select>
-        <label class="small" style="display:block;margin-top:8px">Sous-famille</label>
-        <input id="pSubfamily" class="field" placeholder="Ex. Poivres, Thé noir, Sels">
-        <label class="small" style="display:block;margin-top:8px">Mode de tarification</label>
+        <input id="pName" class="field" placeholder="Ex. Gingembre moulu">
+
+        <div class="grid product-form-grid" style="margin-top:8px">
+          <div>
+            <label class="small">Catégorie</label>
+            <select id="pCategory" class="field"></select>
+          </div>
+          <div>
+            <label class="small">Sous-famille</label>
+            <input id="pSubfamily" class="field" placeholder="Ex. Racines, Poivres, Thé noir">
+          </div>
+        </div>
+
+        <label class="small" style="display:block;margin-top:10px">Comment ce produit est-il vendu ?</label>
         <select id="pPricingMode" class="field">
-          <option value="tiered_weight">Poids — prix par paliers</option>
-          <option value="fixed_unit">Unité — prix fixe</option>
-          <option value="free_unit">Unité — prix libre à la vente</option>
+          <option value="tiered_weight">Au poids — tarifs 25 / 50 / 100 / 200 g</option>
+          <option value="fixed_unit">À l’unité — prix fixe</option>
+          <option value="free_unit">À l’unité — prix saisi au moment de la vente</option>
         </select>
-        <div class="grid" style="margin-top:10px">
-          <input id="pStock" type="number" class="field" placeholder="Stock initial">
-          <input id="pThreshold" type="number" class="field" placeholder="Seuil d’alerte">
+        <div id="productPricingHelp" class="notice product-pricing-help" style="margin-top:8px"></div>
+
+        <div class="grid product-form-grid" style="margin-top:10px">
+          <div>
+            <label id="pStockLabel" class="small">Stock initial (g)</label>
+            <input id="pStock" type="number" class="field" min="0" placeholder="Ex. 1000">
+          </div>
+          <div>
+            <label id="pThresholdLabel" class="small">Alerte stock (g)</label>
+            <input id="pThreshold" type="number" class="field" min="0" placeholder="Ex. 200">
+          </div>
         </div>
-        <div class="grid" style="margin-top:10px">
-          <input id="pBuy" type="number" step="0.01" class="field" placeholder="Achat HT / base">
-          <input id="pSell" type="number" step="0.01" class="field" placeholder="Prix fixe / unité">
+
+        <div style="margin-top:10px">
+          <label id="pBuyLabel" class="small">Coût d’achat HT pour 100 g</label>
+          <input id="pBuy" type="number" min="0" step="0.01" class="field" placeholder="Ex. 3,20">
+          <div id="pBuyHelp" class="small">Utilisé uniquement pour calculer la marge. Laisser à 0 si le coût n’est pas encore connu.</div>
         </div>
-        <div class="grid tier-editor" style="margin-top:10px">
-          <input id="pPrice25" type="number" step="0.01" class="field" placeholder="Prix 25 g">
-          <input id="pPrice50" type="number" step="0.01" class="field" placeholder="Prix 50 g">
-          <input id="pPrice100" type="number" step="0.01" class="field" placeholder="Prix 100 g">
-          <input id="pPrice200" type="number" step="0.01" class="field" placeholder="Prix 200 g">
+
+        <div id="fixedPriceBlock" style="display:none;margin-top:10px">
+          <label class="small">Prix de vente par unité</label>
+          <input id="pSell" type="number" min="0" step="0.01" class="field" placeholder="Ex. 12,00">
         </div>
+
+        <div id="tierPriceBlock" style="margin-top:12px">
+          <div class="small"><b>Tarifs de vente par palier</b> — remplir uniquement les grammages réellement proposés.</div>
+          <div class="grid tier-editor" style="margin-top:7px">
+            <div><label class="small">25 g</label><input id="pPrice25" type="number" min="0" step="0.01" class="field" placeholder="€"></div>
+            <div><label class="small">50 g</label><input id="pPrice50" type="number" min="0" step="0.01" class="field" placeholder="€"></div>
+            <div><label class="small">100 g</label><input id="pPrice100" type="number" min="0" step="0.01" class="field" placeholder="€"></div>
+            <div><label class="small">200 g</label><input id="pPrice200" type="number" min="0" step="0.01" class="field" placeholder="€"></div>
+          </div>
+          <div class="small" style="margin-top:5px">Entre deux paliers, l’application calcule automatiquement le prix par interpolation.</div>
+        </div>
+
         <div class="row" style="justify-content:flex-end;margin-top:14px">
           <button value="cancel" class="secondary">Annuler</button>
           <button id="saveProductBtn" type="button" class="primary">Enregistrer</button>
@@ -822,6 +852,7 @@ function bindEvents() {
   document.querySelector('#addProductBtn').onclick = openProductDialog
   document.querySelector('#addClientBtn').onclick = () => document.querySelector('#clientDialog').showModal()
   document.querySelector('#saveProductBtn').onclick = saveProduct
+  document.querySelector('#pPricingMode').onchange = updateProductPricingForm
   document.querySelector('#saveClientBtn').onclick = saveCustomer
   document.querySelector('#validateSale').onclick = completeSale
   document.querySelector('#saveLoyaltyBtn').onclick = saveLoyaltySettings
@@ -921,7 +952,14 @@ function switchTab(btn) {
   document.querySelectorAll('nav button').forEach(x => x.classList.remove('active'))
   btn.classList.add('active')
   document.querySelectorAll('.section').forEach(x => x.classList.remove('active'))
-  document.querySelector('#' + btn.dataset.tab).classList.add('active')
+  const tab = btn.dataset.tab
+  document.querySelector('#' + tab).classList.add('active')
+
+  // Rendu à l'ouverture : évite un écran vide si un autre panneau a rencontré une erreur auparavant.
+  if (tab === 'pilotage') renderPilotage()
+  if (tab === 'treasury') renderTreasury()
+  if (tab === 'settings') renderSettings()
+  if (tab === 'backup') renderBackupPanel()
 }
 
 async function loadData() {
@@ -987,17 +1025,18 @@ async function loadData() {
 }
 
 function renderAll() {
-  renderSellProducts()
-  renderCart()
-  renderProducts()
-  renderCustomers()
-  renderSales()
-  renderSaleLines()
-  renderPayments()
-  renderPilotage()
-  renderTreasury()
-  renderBackupPanel()
-  renderSettings()
+  const renderers = [
+    renderSellProducts, renderCart, renderProducts, renderCustomers,
+    renderSales, renderSaleLines, renderPayments, renderPilotage,
+    renderTreasury, renderBackupPanel, renderSettings
+  ]
+  for (const renderer of renderers) {
+    try {
+      renderer()
+    } catch (error) {
+      console.error('Erreur de rendu dans '+(renderer.name || 'un panneau'), error)
+    }
+  }
   saveOfflineSnapshot()
 }
 
@@ -1095,15 +1134,36 @@ function renderTicketSummary() {
   })
   const before = gross - cost
   const after = net - cost
+  const fullGesture = gross > 0 && net <= 0.005
 
   const totalEl = document.querySelector('#cartTotal')
   if (totalEl) totalEl.textContent = eur(net)
   if (document.querySelector('#cartSubtotal')) document.querySelector('#cartSubtotal').textContent = eur(gross)
   if (document.querySelector('#discountDisplay')) document.querySelector('#discountDisplay').textContent = discount ? '- '+eur(discount) : eur(0)
   if (document.querySelector('#giftDisplay')) document.querySelector('#giftDisplay').textContent = gift ? '- '+eur(gift) : eur(0)
-  if (document.querySelector('#marginBefore')) document.querySelector('#marginBefore').textContent = missingCost ? 'Partielle' : `${eur(before)} · ${gross ? (before/gross*100).toFixed(0) : 0} %`
-  if (document.querySelector('#marginAfter')) document.querySelector('#marginAfter').textContent = missingCost ? 'Partielle' : `${eur(after)} · ${net ? (after/net*100).toFixed(0) : 0} %`
-  if (document.querySelector('#marginHint')) document.querySelector('#marginHint').textContent = missingCost ? 'Prix d’achat manquant sur au moins un produit.' : 'Calculée à partir des coûts d’achat enregistrés.'
+
+  const beforeEl = document.querySelector('#marginBefore')
+  const afterEl = document.querySelector('#marginAfter')
+  const afterLabel = document.querySelector('#marginAfterLabel')
+  const hint = document.querySelector('#marginHint')
+
+  if (beforeEl) beforeEl.textContent = missingCost
+    ? 'Partielle'
+    : `${eur(before)} · ${gross ? (before/gross*100).toFixed(0) : 0} %`
+
+  if (missingCost) {
+    if (afterLabel) afterLabel.textContent = 'Après remise / offert'
+    if (afterEl) afterEl.textContent = 'Partielle'
+    if (hint) hint.textContent = 'Prix d’achat manquant sur au moins un produit.'
+  } else if (fullGesture) {
+    if (afterLabel) afterLabel.textContent = 'Coût du geste'
+    if (afterEl) afterEl.textContent = eur(cost)
+    if (hint) hint.textContent = 'Tout est offert : aucun CA n’est encaissé. Le coût affiché est le coût d’achat du panier.'
+  } else {
+    if (afterLabel) afterLabel.textContent = 'Marge après geste'
+    if (afterEl) afterEl.textContent = `${eur(after)} · ${net ? (after/net*100).toFixed(0) : 0} %`
+    if (hint) hint.textContent = 'Calculée à partir des coûts d’achat enregistrés.'
+  }
 }
 
 function renderSellProducts() {
@@ -1194,7 +1254,7 @@ function renderCart() {
   document.querySelectorAll('.minus').forEach(btn => btn.onclick = () => {
     const index = Number(btn.dataset.i)
     const product = products.find(p => p.id === cart[index].id)
-    const step = product?.stock_unit === 'g' ? 50 : 1
+    const step = product?.stock_unit === 'g' ? 25 : 1
     cart[index].qty = Math.max(1, cart[index].qty - step)
     renderCart()
   })
@@ -1202,7 +1262,7 @@ function renderCart() {
   document.querySelectorAll('.plus').forEach(btn => btn.onclick = () => {
     const index = Number(btn.dataset.i)
     const product = products.find(p => p.id === cart[index].id)
-    const step = product?.stock_unit === 'g' ? 50 : 1
+    const step = product?.stock_unit === 'g' ? 25 : 1
     cart[index].qty += step
     renderCart()
   })
@@ -1608,10 +1668,50 @@ async function confirmCancelSale() {
   await loadData()
 }
 
+function updateProductPricingForm() {
+  const mode = document.querySelector('#pPricingMode')?.value || 'tiered_weight'
+  const weighted = mode === 'tiered_weight'
+  const fixed = mode === 'fixed_unit'
+  const free = mode === 'free_unit'
+
+  const tierBlock = document.querySelector('#tierPriceBlock')
+  const fixedBlock = document.querySelector('#fixedPriceBlock')
+  if (tierBlock) tierBlock.style.display = weighted ? 'block' : 'none'
+  if (fixedBlock) fixedBlock.style.display = fixed ? 'block' : 'none'
+
+  const stockLabel = document.querySelector('#pStockLabel')
+  const thresholdLabel = document.querySelector('#pThresholdLabel')
+  const buyLabel = document.querySelector('#pBuyLabel')
+  const help = document.querySelector('#productPricingHelp')
+
+  if (stockLabel) stockLabel.textContent = weighted ? 'Stock initial (g)' : 'Stock initial (unités)'
+  if (thresholdLabel) thresholdLabel.textContent = weighted ? 'Alerte stock (g)' : 'Alerte stock (unités)'
+  if (buyLabel) buyLabel.textContent = weighted ? 'Coût d’achat HT pour 100 g' : 'Coût d’achat HT par unité'
+
+  if (help) {
+    help.innerHTML = weighted
+      ? '<b>Produit vendu au poids.</b> Saisis les prix des paliers connus. Une quantité intermédiaire sera calculée automatiquement.'
+      : fixed
+        ? '<b>Produit vendu à l’unité.</b> Saisis son prix de vente fixe ci-dessous.'
+        : '<b>Produit à prix libre.</b> Aucun prix de vente n’est enregistré ici : Benoît le saisira au moment de l’ajouter au ticket.'
+  }
+
+  if (!fixed && document.querySelector('#pSell')) document.querySelector('#pSell').value = ''
+}
+
 function openProductDialog() {
   document.querySelector('#pCategory').innerHTML = categories
     .filter(c => c.active)
     .map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
+
+  ;['pName','pSubfamily','pStock','pThreshold','pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200']
+    .forEach(id => {
+      const el = document.querySelector('#'+id)
+      if (el) el.value = ''
+    })
+  document.querySelector('#pPricingMode').value = 'tiered_weight'
+  document.querySelector('#productMsg').textContent = ''
+  updateProductPricingForm()
   document.querySelector('#productDialog').showModal()
 }
 
@@ -2519,7 +2619,6 @@ function renderPilotage() {
   renderLowStocks()
   renderManagementTable(monthly)
   renderExpenses()
-  fillPilotageSettings()
 }
 
 function gauge(label, value, threshold, suffix = '') {

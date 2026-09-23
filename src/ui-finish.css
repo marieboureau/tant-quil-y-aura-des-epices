@@ -234,3 +234,24 @@ aside > .sub{
   #sell .payments{grid-template-columns:1fr 1fr}
   .discount-buttons .secondary{min-height:38px}
 }
+
+
+/* Sprint 6A.1 — formulaire produit simplifié */
+.product-dialog-card{
+  width:min(760px,92vw);
+}
+.product-form-grid{
+  grid-template-columns:1fr 1fr;
+}
+.product-pricing-help{
+  line-height:1.4;
+}
+#tierPriceBlock,
+#fixedPriceBlock{
+  border-top:1px solid var(--line);
+  padding-top:10px;
+}
+@media(max-width:600px){
+  .product-form-grid{grid-template-columns:1fr}
+  .product-dialog-card{width:min(96vw,760px)}
+}
