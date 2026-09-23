@@ -2090,7 +2090,7 @@ function renderBackupPanel() {
   const techRows = document.querySelector('#backupTechRows')
   if (techRows) {
     techRows.innerHTML = `
-      <tr><td>Version application</td><td>Sprint 6A</td></tr>
+      <tr><td>Version application</td><td>Sprint 6B</td></tr>
       <tr><td>Organisation</td><td>${esc(organizationId || '—')}</td></tr>
       <tr><td>Snapshot hors ligne</td><td>${offlineSnapshot?.saved_at ? fmtDateTime(offlineSnapshot.saved_at) : 'Non disponible'}</td></tr>
       <tr><td>Produits mémorisés</td><td>${offlineSnapshot?.products?.length ?? products.length}</td></tr>
@@ -2843,6 +2843,7 @@ function renderRemittances() {
   const unassignedCheques = chequeRows.reduce((sum,p) => remittanceForPayment(p.id) ? sum : sum + num(p.amount),0)
 
   document.querySelector('#remittanceKpis').innerHTML = `
+    <div class="card kpi"><div class="muted">CA encaissé période</div><div class="kpi-value">${eur(totalCa)}</div></div>
     <div class="card kpi"><div class="muted">Espèces encaissées</div><div class="kpi-value">${eur(cashTotal)}</div><div class="small">${cashShare.toFixed(1)} % du CA de la période</div></div>
     <div class="card kpi"><div class="muted">Espèces en remises</div><div class="kpi-value">${eur(bankedCash)}</div></div>
     <div class="card kpi"><div class="muted">Fonds de caisse actuel</div><div class="kpi-value">${eur(currentReserve)}</div><div class="small">Cible : ${eur(settings.cash_float_target)}</div></div>
@@ -2908,8 +2909,13 @@ function suggestCashDeposit() {
 
 async function createRemittanceFromSelection(method,kind) {
   const msg = document.querySelector(method === 'cash' ? '#cashRemittanceMsg' : '#chequeRemittanceMsg')
-  const ids = selectedRemittancePaymentIds(method)
-  if (!ids.length) return msg.textContent = 'Sélectionne au moins un paiement.'
+  let ids = selectedRemittancePaymentIds(method)
+  if (kind === 'cash_reserve') {
+    ids = ids.filter(id => !remittanceForPayment(id))
+  }
+  if (!ids.length) return msg.textContent = kind === 'cash_reserve'
+    ? 'Sélectionne au moins un encaissement non encore affecté.'
+    : 'Sélectionne au moins un paiement.'
 
   const name = document.querySelector(method === 'cash' ? '#cashRemittanceName' : '#chequeRemittanceName').value.trim() || null
   const depositDate = kind === 'bank_deposit'
