@@ -117,8 +117,8 @@ begin
     else 'REM'
   end;
 
-  select coalesce(max(
-    nullif(substring(remittance_number from '([0-9]{3})
+  select count(*) + 1
+  into v_next
   from public.remittance_batches
   where organization_id=v_org
     and remittance_number like v_prefix||'-'||v_year||'-%';
