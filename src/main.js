@@ -33,6 +33,7 @@ let offlineQueue = []
 let installPrompt = null
 
 const eur = value => Number(value || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
+const eur0 = value => Math.round(Number(value || 0)).toLocaleString('fr-FR') + ' €'
 const num = value => Number(value || 0)
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
@@ -2138,7 +2139,7 @@ function renderBackupPanel() {
   const techRows = document.querySelector('#backupTechRows')
   if (techRows) {
     techRows.innerHTML = `
-      <tr><td>Version application</td><td>Sprint 6B.2</td></tr>
+      <tr><td>Version application</td><td>Sprint 6B.2 révisé</td></tr>
       <tr><td>Organisation</td><td>${esc(organizationId || '—')}</td></tr>
       <tr><td>Snapshot hors ligne</td><td>${offlineSnapshot?.saved_at ? fmtDateTime(offlineSnapshot.saved_at) : 'Non disponible'}</td></tr>
       <tr><td>Produits mémorisés</td><td>${offlineSnapshot?.products?.length ?? products.length}</td></tr>
@@ -2942,8 +2943,8 @@ function effectiveCashFloatTarget(cashTotal = currentRemittanceCashTotal()) {
   const percent = num(settings?.cash_float_target_percent)
   const mode = settings?.cash_float_target_mode || (percent > 0 ? 'percent' : 'amount')
   return mode === 'percent'
-    ? cashTotal * percent / 100
-    : num(settings?.cash_float_target)
+    ? Math.round(cashTotal * percent / 100)
+    : Math.round(num(settings?.cash_float_target))
 }
 
 function refreshCashFloatProposal(syncAmountFromPercent = false) {
@@ -2955,11 +2956,11 @@ function refreshCashFloatProposal(syncAmountFromPercent = false) {
   const cashTotal = currentRemittanceCashTotal()
   const pct = Math.max(0,Math.min(100,Number(percentInput.value || 0)))
   if (pct > 0) {
-    const proposed = cashTotal * pct / 100
-    computed.textContent = eur(proposed)
-    if (syncAmountFromPercent) amountInput.value = proposed.toFixed(2)
+    const proposed = Math.round(cashTotal * pct / 100)
+    computed.textContent = eur0(proposed)
+    if (syncAmountFromPercent) amountInput.value = String(proposed)
   } else {
-    computed.textContent = eur(Math.max(0,Number(amountInput.value || 0)))
+    computed.textContent = eur0(Math.max(0,Number(amountInput.value || 0)))
   }
 }
 
@@ -3002,17 +3003,17 @@ function renderRemittances() {
     <div class="card kpi"><div class="muted">CA encaissé période</div><div class="kpi-value">${eur(totalCa)}</div></div>
     <div class="card kpi"><div class="muted">Espèces encaissées</div><div class="kpi-value">${eur(cashTotal)}</div><div class="small">${cashShare.toFixed(1)} % du CA de la période</div></div>
     <div class="card kpi"><div class="muted">Espèces en remises</div><div class="kpi-value">${eur(bankedCash)}</div></div>
-    <div class="card kpi"><div class="muted">Fonds de caisse actuel</div><div class="kpi-value">${eur(currentReserve)}</div><div class="small">Cible : ${eur(target)}${targetMode==='percent' ? ' · '+targetPercent.toFixed(0)+' % des espèces' : ''}</div></div>
+    <div class="card kpi"><div class="muted">Fonds de caisse actuel</div><div class="kpi-value">${eur(currentReserve)}</div><div class="small">Cible : ${eur0(target)}${targetMode==='percent' ? ' · '+targetPercent.toFixed(0)+' % des espèces' : ''}</div></div>
     <div class="card kpi"><div class="muted">Espèces à affecter</div><div class="kpi-value">${eur(unassignedCash)}</div></div>
     <div class="card kpi"><div class="muted">Chèques à affecter</div><div class="kpi-value">${eur(unassignedCheques)}</div><div class="small">Total chèques période : ${eur(chequeTotal)}</div></div>
   `
   const reserveNeeded = Math.max(0,target-currentReserve)
-  const suggestedDeposit = Math.max(0,unassignedCash-reserveNeeded)
+  const suggestedDeposit = Math.round(Math.max(0,unassignedCash-reserveNeeded))
   document.querySelector('#cashSuggestion').innerHTML = suggestedDeposit > 0
-    ? `Avec un fonds de caisse cible de <b>${eur(target)}</b>, la remise espèces suggérée sur les paiements encore disponibles est d’environ <b>${eur(suggestedDeposit)}</b>.`
-    : `Aucune remise espèces suggérée actuellement. Fonds de caisse cible : <b>${eur(target)}</b>.`
+    ? `Avec un fonds de caisse cible de <b>${eur0(target)}</b>, la remise espèces suggérée sur les paiements encore disponibles est d’environ <b>${eur0(suggestedDeposit)}</b>.`
+    : `Aucune remise espèces suggérée actuellement. Fonds de caisse cible : <b>${eur0(target)}</b>.`
 
-  document.querySelector('#cashFloatTarget').value = target.toFixed(2)
+  document.querySelector('#cashFloatTarget').value = String(Math.round(target))
   document.querySelector('#cashFloatTargetPercent').value = targetMode === 'percent' && targetPercent > 0 ? targetPercent.toFixed(0) : ''
   refreshCashFloatProposal()
   renderRemittancePaymentTable('cash',cashRows,'cashRemittanceRows')
@@ -3027,7 +3028,7 @@ function selectedRemittancePaymentIds(method) {
 
 async function saveCashFloatTarget() {
   const msg = document.querySelector('#cashFloatMsg')
-  const amount = Math.max(0,Number(document.querySelector('#cashFloatTarget').value || 0))
+  const amount = Math.round(Math.max(0,Number(document.querySelector('#cashFloatTarget').value || 0)))
   const percent = Math.max(0,Math.min(100,Number(document.querySelector('#cashFloatTargetPercent').value || 0)))
   const mode = percent > 0 ? 'percent' : 'amount'
 
@@ -3057,7 +3058,7 @@ function suggestCashDeposit() {
   const target = effectiveCashFloatTarget(cashTotal)
   const unassigned = rows.reduce((sum,p) => sum+num(p.amount),0)
   const reserveNeeded = Math.max(0,target-currentReserve)
-  const depositTarget = Math.max(0,unassigned-reserveNeeded)
+  const depositTarget = Math.round(Math.max(0,unassigned-reserveNeeded))
 
   document.querySelectorAll('.remittance-check[data-method="cash"]').forEach(x => x.checked=false)
   if (depositTarget <= 0) {
@@ -3256,6 +3257,25 @@ function copyValue(text, button) {
   })
 }
 
+function isCaisseBancBatch(batch) {
+  return batch &&
+    batch.status !== 'cancelled' &&
+    /^CAISSE\s+N\d{4}/i.test(String(batch.remittance_number || '').trim())
+}
+
+function caisseBancAmountForSales(selectedSales) {
+  const saleIds = new Set(selectedSales.map(s => s.id))
+  const paymentById = new Map(payments.map(p => [p.id,p]))
+  const caisseBatchIds = new Set(remittanceBatches.filter(isCaisseBancBatch).map(b => b.id))
+
+  return remittanceItems
+    .filter(item => caisseBatchIds.has(item.batch_id))
+    .reduce((sum,item) => {
+      const payment = paymentById.get(item.payment_id)
+      return payment && saleIds.has(payment.sale_id) ? sum + num(item.amount) : sum
+    },0)
+}
+
 function renderUrssaf() {
   const now = new Date()
   const { startMonth, endMonth, quarter } = quarterBounds(now)
@@ -3267,6 +3287,7 @@ function renderUrssaf() {
   )
 
   const ca = qSales.reduce((sum, sale) => sum + num(sale.total_ttc), 0)
+  const caisseBanc = caisseBancAmountForSales(qSales)
   const socialRate = num(settings.micro_social_rate)
   const taxRate = num(settings.income_tax_rate)
   const social = ca * socialRate / 100
@@ -3274,17 +3295,29 @@ function renderUrssaf() {
 
   document.querySelector('#urssafBox').innerHTML = `
     <div class="small" style="margin-bottom:8px">Trimestre ${quarter} — ${currentYear()}</div>
-    <div class="urssaf-line">
-      <div><b>Chiffre d'affaires des ventes de marchandises</b><div class="small">Régime micro-social simplifié</div></div>
-      <div class="row"><b>${eur(ca)}</b><button class="copy-btn" data-copy="${ca.toFixed(2)}">⧉</button></div>
-    </div>
-    <div class="urssaf-line">
-      <div><b>Cotisations sociales estimées</b><div class="small">${socialRate.toFixed(2)} %</div></div>
-      <div class="row"><b>${eur(social)}</b><button class="copy-btn" data-copy="${social.toFixed(2)}">⧉</button></div>
-    </div>
-    <div class="urssaf-line">
-      <div><b>Versement libératoire estimé</b><div class="small">${taxRate.toFixed(2)} % — si option applicable</div></div>
-      <div class="row"><b>${eur(tax)}</b><button class="copy-btn" data-copy="${tax.toFixed(2)}">⧉</button></div>
+    <div class="urssaf-dual">
+      <div class="urssaf-panel">
+        <h3>URSSAF</h3>
+        <div class="urssaf-line">
+          <div><b>CA déclaré</b><div class="small">CA total encaissé</div></div>
+          <div class="row"><b>${eur(ca)}</b><button class="copy-btn" data-copy="${ca.toFixed(2)}">⧉</button></div>
+        </div>
+        <div class="urssaf-line">
+          <div><b>Cotisations sociales estimées</b><div class="small">${socialRate.toFixed(2)} %</div></div>
+          <div class="row"><b>${eur(social)}</b><button class="copy-btn" data-copy="${social.toFixed(2)}">⧉</button></div>
+        </div>
+        <div class="urssaf-line">
+          <div><b>Versement libératoire estimé</b><div class="small">${taxRate.toFixed(2)} % — si option applicable</div></div>
+          <div class="row"><b>${eur(tax)}</b><button class="copy-btn" data-copy="${tax.toFixed(2)}">⧉</button></div>
+        </div>
+      </div>
+      <div class="urssaf-panel caisse-banc-panel">
+        <h3>Caisse banc</h3>
+        <div class="urssaf-line">
+          <div><b>Total sur le trimestre</b><div class="small">Remises dont le libellé commence par CAISSE N + 4 chiffres</div></div>
+          <div><b>${eur(caisseBanc)}</b></div>
+        </div>
+      </div>
     </div>
   `
 
