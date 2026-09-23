@@ -25,6 +25,8 @@ let cashClosings = []
 let bankTransactions = []
 let bankRules = []
 let forecastEvents = []
+let remittanceBatches = []
+let remittanceItems = []
 let pendingBankImport = null
 let offlineSnapshot = null
 let offlineQueue = []
@@ -96,6 +98,7 @@ function renderShell() {
           <button data-tab="history">Historique</button>
           <button data-tab="products">Produits</button>
           <button data-tab="clients">Clients</button>
+          <button data-tab="remittances">Remises & caisse</button>
           <button data-tab="pilotage">Pilotage</button>
           <button data-tab="treasury">Caisse & trésorerie</button>
           <button data-tab="backup">Sauvegarde & appareil</button>
@@ -307,6 +310,94 @@ function renderShell() {
             </div>
           </div>
         </section>
+        <section id="remittances" class="section">
+          <div class="top">
+            <div>
+              <h1>Remises & caisse</h1>
+              <div class="muted">Suivi des espèces, chèques, fonds de caisse et dépôts bancaires.</div>
+            </div>
+            <button id="refreshRemittancesBtn" class="secondary">Actualiser</button>
+          </div>
+
+          <div class="card remittance-toolbar">
+            <div>
+              <label class="small">Période</label>
+              <input id="remittanceMonth" class="field compact" type="month">
+            </div>
+            <div>
+              <label class="small">Fonds de caisse cible</label>
+              <div class="row">
+                <input id="cashFloatTarget" class="field compact" type="number" min="0" step="10" placeholder="200">
+                <span>€</span>
+                <button id="saveCashFloatTargetBtn" class="secondary">Enregistrer</button>
+              </div>
+            </div>
+            <div id="cashFloatMsg" class="small"></div>
+          </div>
+
+          <div id="remittanceKpis" class="kpi-grid" style="margin-top:14px"></div>
+
+          <div class="card" style="margin-top:14px">
+            <div class="top compact-top">
+              <div>
+                <h2>Espèces</h2>
+                <div class="small">Sélectionne les encaissements à conserver physiquement ou à regrouper dans une remise bancaire.</div>
+              </div>
+              <button id="suggestCashDepositBtn" class="secondary">Proposer une remise</button>
+            </div>
+            <div id="cashSuggestion" class="notice" style="margin:8px 0"></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th></th><th>N° vente</th><th>Date</th><th>Montant</th><th>Affectation</th></tr></thead>
+                <tbody id="cashRemittanceRows"></tbody>
+              </table>
+            </div>
+            <div class="remittance-selection-total">Sélection : <b id="cashSelectionTotal">0,00 €</b></div>
+            <div class="remittance-actions">
+              <input id="cashRemittanceName" class="field" placeholder="Nom facultatif — ex. ESP-2026-001">
+              <input id="cashDepositDate" class="field" type="date" title="Date de dépôt">
+              <button id="keepCashReserveBtn" class="secondary">Conserver en caisse</button>
+              <button id="createCashDepositBtn" class="primary">Créer la remise espèces</button>
+            </div>
+            <div id="cashRemittanceMsg" class="small"></div>
+          </div>
+
+          <div class="card" style="margin-top:14px">
+            <div class="top compact-top">
+              <div>
+                <h2>Chèques</h2>
+                <div class="small">Regroupe les chèques en remise puis renseigne leur dépôt et leur crédit sur le compte.</div>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th></th><th>N° vente</th><th>Date</th><th>Montant</th><th>Affectation</th></tr></thead>
+                <tbody id="chequeRemittanceRows"></tbody>
+              </table>
+            </div>
+            <div class="remittance-selection-total">Sélection : <b id="chequeSelectionTotal">0,00 €</b></div>
+            <div class="remittance-actions">
+              <input id="chequeRemittanceName" class="field" placeholder="Nom facultatif — ex. CHQ-2026-001">
+              <input id="chequeDepositDate" class="field" type="date" title="Date de dépôt">
+              <button id="createChequeDepositBtn" class="primary">Créer la remise chèques</button>
+            </div>
+            <div id="chequeRemittanceMsg" class="small"></div>
+          </div>
+
+          <div class="card" style="margin-top:14px">
+            <h2>Remises et fonds de caisse</h2>
+            <div class="small">Une remise passe de Préparée à Déposée puis Créditée. Une date de crédit permet le rapprochement avec le relevé bancaire.</div>
+            <div class="table-wrap" style="margin-top:10px">
+              <table>
+                <thead>
+                  <tr><th>N°</th><th>Type</th><th>Montant</th><th>Statut</th><th>Préparée</th><th>Dépôt</th><th>Crédit bancaire</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="remittanceBatchRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <section id="pilotage" class="section">
           <div class="top">
             <div>
@@ -924,6 +1015,13 @@ function bindEvents() {
 
   document.querySelector('#closeImportBtn').onclick = closeImport
   document.querySelector('#applyImportBtn').onclick = applyImport
+  document.querySelector('#refreshRemittancesBtn').onclick = loadData
+  document.querySelector('#remittanceMonth').onchange = renderRemittances
+  document.querySelector('#saveCashFloatTargetBtn').onclick = saveCashFloatTarget
+  document.querySelector('#suggestCashDepositBtn').onclick = suggestCashDeposit
+  document.querySelector('#keepCashReserveBtn').onclick = () => createRemittanceFromSelection('cash','cash_reserve')
+  document.querySelector('#createCashDepositBtn').onclick = () => createRemittanceFromSelection('cash','bank_deposit')
+  document.querySelector('#createChequeDepositBtn').onclick = () => createRemittanceFromSelection('cheque','bank_deposit')
   document.querySelector('#refreshPilotageBtn').onclick = loadData
   document.querySelector('#addExpenseBtn').onclick = addManagementExpense
   document.querySelector('#refreshTreasuryBtn').onclick = loadData
@@ -956,6 +1054,7 @@ function switchTab(btn) {
   document.querySelector('#' + tab).classList.add('active')
 
   // Rendu à l'ouverture : évite un écran vide si un autre panneau a rencontré une erreur auparavant.
+  if (tab === 'remittances') renderRemittances()
   if (tab === 'pilotage') renderPilotage()
   if (tab === 'treasury') renderTreasury()
   if (tab === 'settings') renderSettings()
@@ -980,7 +1079,7 @@ async function loadData() {
   const [
     categoriesRes, productsRes, tiersRes, customersRes, settingsRes,
     loyaltyRes, salesRes, linesRes, paymentsRes, expensesRes,
-    closingsRes, bankRes, rulesRes, forecastRes
+    closingsRes, bankRes, rulesRes, forecastRes, remittanceBatchesRes, remittanceItemsRes
   ] = await Promise.all([
     supabase.from('product_categories').select('id,name,active,sort_order').order('sort_order'),
     supabase.from('products').select('*').order('name'),
@@ -995,13 +1094,16 @@ async function loadData() {
     supabase.from('cash_closings').select('*').order('closing_date', { ascending: false }).limit(500),
     supabase.from('bank_transactions').select('*').order('transaction_date', { ascending: false }).limit(5000),
     supabase.from('bank_category_rules').select('*').eq('active', true).order('priority').limit(500),
-    supabase.from('forecast_events').select('*').eq('active', true).order('event_date').limit(1000)
+    supabase.from('forecast_events').select('*').eq('active', true).order('event_date').limit(1000),
+    supabase.from('remittance_batches').select('*').order('prepared_at', { ascending:false }).limit(2000),
+    supabase.from('remittance_items').select('*').limit(10000)
   ])
 
   const error = [
     categoriesRes.error, productsRes.error, tiersRes.error, customersRes.error, settingsRes.error,
     loyaltyRes.error, salesRes.error, linesRes.error, paymentsRes.error, expensesRes.error,
-    closingsRes.error, bankRes.error, rulesRes.error, forecastRes.error
+    closingsRes.error, bankRes.error, rulesRes.error, forecastRes.error,
+    remittanceBatchesRes.error, remittanceItemsRes.error
   ].find(Boolean)
 
   if (error) return showGlobalError(error.message)
@@ -1020,6 +1122,8 @@ async function loadData() {
   bankTransactions = bankRes.data || []
   bankRules = rulesRes.data || []
   forecastEvents = forecastRes.data || []
+  remittanceBatches = remittanceBatchesRes.data || []
+  remittanceItems = remittanceItemsRes.data || []
 
   renderAll()
 }
@@ -1027,7 +1131,7 @@ async function loadData() {
 function renderAll() {
   const renderers = [
     renderSellProducts, renderCart, renderProducts, renderCustomers,
-    renderSales, renderSaleLines, renderPayments, renderPilotage,
+    renderSales, renderSaleLines, renderPayments, renderRemittances, renderPilotage,
     renderTreasury, renderBackupPanel, renderSettings
   ]
   for (const renderer of renderers) {
@@ -1988,7 +2092,7 @@ function renderBackupPanel() {
   const techRows = document.querySelector('#backupTechRows')
   if (techRows) {
     techRows.innerHTML = `
-      <tr><td>Version application</td><td>Sprint 6A</td></tr>
+      <tr><td>Version application</td><td>Sprint 6B</td></tr>
       <tr><td>Organisation</td><td>${esc(organizationId || '—')}</td></tr>
       <tr><td>Snapshot hors ligne</td><td>${offlineSnapshot?.saved_at ? fmtDateTime(offlineSnapshot.saved_at) : 'Non disponible'}</td></tr>
       <tr><td>Produits mémorisés</td><td>${offlineSnapshot?.products?.length ?? products.length}</td></tr>
@@ -2026,7 +2130,7 @@ async function exportFullBackup() {
 
   const tables = [
     'organizations','user_profiles','settings','product_categories','products','product_price_tiers',
-    'customers','loyalty_events','sales','sale_lines','payments','stock_movements',
+    'customers','loyalty_events','remittance_batches','remittance_items','sales','sale_lines','payments','stock_movements',
     'cash_closings','bank_transactions','bank_category_rules','forecast_events',
     'management_expenses'
   ]
@@ -2590,6 +2694,290 @@ function pilotageMonthlyData() {
       netRate: ca ? net / ca * 100 : 0
     }
   })
+}
+
+
+// =========================================================
+// SPRINT 6B — REMISES & CAISSE
+// =========================================================
+
+function remittancePeriod() {
+  const input = document.querySelector('#remittanceMonth')
+  const now = new Date()
+  const fallback = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+  const month = input?.value || fallback
+  if (input && !input.value) input.value = month
+  const [year,monthNo] = month.split('-').map(Number)
+  const start = new Date(year,monthNo-1,1)
+  const end = new Date(year,monthNo,1)
+  return {month,year,monthNo,start,end}
+}
+
+function paymentInRemittancePeriod(payment, period) {
+  const sale = saleById(payment.sale_id)
+  if (!sale || sale.status !== 'completed') return false
+  const d = new Date(sale.sold_at)
+  return d >= period.start && d < period.end
+}
+
+function activeRemittanceBatch(batchId) {
+  const batch = remittanceBatches.find(b => b.id === batchId)
+  return batch && batch.status !== 'cancelled' ? batch : null
+}
+
+function remittanceForPayment(paymentId) {
+  const item = remittanceItems.find(i => i.payment_id === paymentId)
+  if (!item) return null
+  const batch = activeRemittanceBatch(item.batch_id)
+  return batch ? {batch,item} : null
+}
+
+function remittanceAmount(batchId) {
+  return remittanceItems
+    .filter(i => i.batch_id === batchId)
+    .reduce((sum,i) => sum + num(i.amount),0)
+}
+
+function remittanceKindLabel(batch) {
+  if (batch.remittance_kind === 'cash_reserve') return 'Fonds de caisse'
+  return batch.payment_method === 'cheque' ? 'Remise chèques' : 'Remise espèces'
+}
+
+function remittanceStatusLabel(status) {
+  return ({
+    prepared:'Préparée',
+    deposited:'Déposée',
+    credited:'Créditée',
+    cancelled:'Annulée'
+  })[status] || status
+}
+
+function remittancePaymentRows(method, period) {
+  return payments
+    .filter(p =>
+      p.payment_method === method &&
+      (p.status || 'completed') === 'completed' &&
+      paymentInRemittancePeriod(p,period)
+    )
+    .sort((a,b) => new Date(a.paid_at || saleById(a.sale_id)?.sold_at) - new Date(b.paid_at || saleById(b.sale_id)?.sold_at))
+}
+
+function renderRemittancePaymentTable(method, rows, bodyId) {
+  const body = document.querySelector('#'+bodyId)
+  if (!body) return
+
+  body.innerHTML = rows.map(payment => {
+    const sale = saleById(payment.sale_id)
+    const assignment = remittanceForPayment(payment.id)
+    const batch = assignment?.batch
+    const locked = batch && batch.remittance_kind !== 'cash_reserve'
+    const label = batch
+      ? `${esc(batch.remittance_number)} · ${esc(remittanceStatusLabel(batch.status))}`
+      : 'À affecter'
+    return `<tr>
+      <td><input class="remittance-check" type="checkbox" data-method="${method}" data-payment-id="${payment.id}" ${locked ? 'disabled' : ''}></td>
+      <td><b>${esc(sale?.sale_number || payment.sale_id.slice(0,8))}</b></td>
+      <td>${fmtDateTime(sale?.sold_at || payment.paid_at)}</td>
+      <td>${eur(payment.amount)}</td>
+      <td><span class="status ${batch ? 'ok' : 'off'}">${label}</span></td>
+    </tr>`
+  }).join('') || '<tr><td colspan="5" class="muted">Aucun paiement sur cette période.</td></tr>'
+
+  body.querySelectorAll('.remittance-check').forEach(box => box.onchange = updateRemittanceSelectionTotals)
+  updateRemittanceSelectionTotals()
+}
+
+function updateRemittanceSelectionTotals() {
+  for (const method of ['cash','cheque']) {
+    const total = [...document.querySelectorAll(`.remittance-check[data-method="${method}"]:checked`)]
+      .reduce((sum,box) => {
+        const payment = payments.find(p => p.id === box.dataset.paymentId)
+        return sum + num(payment?.amount)
+      },0)
+    const el = document.querySelector(method === 'cash' ? '#cashSelectionTotal' : '#chequeSelectionTotal')
+    if (el) el.textContent = eur(total)
+  }
+}
+
+function renderRemittanceBatches() {
+  const body = document.querySelector('#remittanceBatchRows')
+  if (!body) return
+
+  const rows = remittanceBatches
+    .filter(b => b.status !== 'cancelled')
+    .slice(0,100)
+
+  body.innerHTML = rows.map(batch => {
+    const canCancel = batch.status !== 'credited'
+    return `<tr>
+      <td><b>${esc(batch.remittance_number)}</b></td>
+      <td>${esc(remittanceKindLabel(batch))}</td>
+      <td>${eur(remittanceAmount(batch.id))}</td>
+      <td><span class="status ${batch.status === 'credited' ? 'ok' : 'off'}">${esc(remittanceStatusLabel(batch.status))}</span></td>
+      <td>${fmtDateTime(batch.prepared_at)}</td>
+      <td><input class="field compact remittance-deposit-date" data-id="${batch.id}" type="date" value="${batch.deposit_date || ''}" ${batch.remittance_kind === 'cash_reserve' ? 'disabled' : ''}></td>
+      <td><input class="field compact remittance-credit-date" data-id="${batch.id}" type="date" value="${batch.credited_date || ''}" ${batch.remittance_kind === 'cash_reserve' ? 'disabled' : ''}></td>
+      <td>
+        ${batch.remittance_kind === 'bank_deposit' ? `<button class="secondary save-remittance-dates" data-id="${batch.id}">Enregistrer</button>` : ''}
+        ${canCancel ? `<button class="danger cancel-remittance" data-id="${batch.id}">Annuler</button>` : ''}
+      </td>
+    </tr>`
+  }).join('') || '<tr><td colspan="8" class="muted">Aucune remise créée.</td></tr>'
+
+  document.querySelectorAll('.save-remittance-dates').forEach(btn => btn.onclick = () => saveRemittanceDates(btn.dataset.id))
+  document.querySelectorAll('.cancel-remittance').forEach(btn => btn.onclick = () => cancelRemittance(btn.dataset.id))
+}
+
+function renderRemittances() {
+  const section = document.querySelector('#remittances')
+  if (!section || !settings) return
+
+  const period = remittancePeriod()
+  const cashRows = remittancePaymentRows('cash',period)
+  const chequeRows = remittancePaymentRows('cheque',period)
+  const periodSales = sales.filter(s => {
+    if (s.status !== 'completed') return false
+    const d = new Date(s.sold_at)
+    return d >= period.start && d < period.end
+  })
+  const totalCa = periodSales.reduce((sum,s) => sum + num(s.total_ttc),0)
+  const cashTotal = cashRows.reduce((sum,p) => sum + num(p.amount),0)
+  const chequeTotal = chequeRows.reduce((sum,p) => sum + num(p.amount),0)
+  const cashShare = totalCa ? cashTotal/totalCa*100 : 0
+
+  const reserveBatchIds = new Set(remittanceBatches
+    .filter(b => b.status !== 'cancelled' && b.remittance_kind === 'cash_reserve')
+    .map(b => b.id))
+  const currentReserve = remittanceItems
+    .filter(i => reserveBatchIds.has(i.batch_id))
+    .reduce((sum,i) => sum + num(i.amount),0)
+
+  const bankedCash = cashRows.reduce((sum,p) => {
+    const a = remittanceForPayment(p.id)
+    return a?.batch.remittance_kind === 'bank_deposit' ? sum + num(p.amount) : sum
+  },0)
+  const unassignedCash = cashRows.reduce((sum,p) => remittanceForPayment(p.id) ? sum : sum + num(p.amount),0)
+  const unassignedCheques = chequeRows.reduce((sum,p) => remittanceForPayment(p.id) ? sum : sum + num(p.amount),0)
+
+  document.querySelector('#remittanceKpis').innerHTML = `
+    <div class="card kpi"><div class="muted">CA encaissé période</div><div class="kpi-value">${eur(totalCa)}</div></div>
+    <div class="card kpi"><div class="muted">Espèces encaissées</div><div class="kpi-value">${eur(cashTotal)}</div><div class="small">${cashShare.toFixed(1)} % du CA de la période</div></div>
+    <div class="card kpi"><div class="muted">Espèces en remises</div><div class="kpi-value">${eur(bankedCash)}</div></div>
+    <div class="card kpi"><div class="muted">Fonds de caisse actuel</div><div class="kpi-value">${eur(currentReserve)}</div><div class="small">Cible : ${eur(settings.cash_float_target)}</div></div>
+    <div class="card kpi"><div class="muted">Espèces à affecter</div><div class="kpi-value">${eur(unassignedCash)}</div></div>
+    <div class="card kpi"><div class="muted">Chèques à affecter</div><div class="kpi-value">${eur(unassignedCheques)}</div><div class="small">Total chèques période : ${eur(chequeTotal)}</div></div>
+  `
+
+  const target = num(settings.cash_float_target)
+  const reserveNeeded = Math.max(0,target-currentReserve)
+  const suggestedDeposit = Math.max(0,unassignedCash-reserveNeeded)
+  document.querySelector('#cashSuggestion').innerHTML = suggestedDeposit > 0
+    ? `Avec un fonds de caisse cible de <b>${eur(target)}</b>, la remise espèces suggérée sur les paiements encore disponibles est d’environ <b>${eur(suggestedDeposit)}</b>.`
+    : `Aucune remise espèces suggérée actuellement. Fonds de caisse cible : <b>${eur(target)}</b>.`
+
+  document.querySelector('#cashFloatTarget').value = target.toFixed(0)
+  renderRemittancePaymentTable('cash',cashRows,'cashRemittanceRows')
+  renderRemittancePaymentTable('cheque',chequeRows,'chequeRemittanceRows')
+  renderRemittanceBatches()
+}
+
+function selectedRemittancePaymentIds(method) {
+  return [...document.querySelectorAll(`.remittance-check[data-method="${method}"]:checked`)]
+    .map(x => x.dataset.paymentId)
+}
+
+async function saveCashFloatTarget() {
+  const msg = document.querySelector('#cashFloatMsg')
+  const value = Math.max(0,Number(document.querySelector('#cashFloatTarget').value || 0))
+  msg.textContent = 'Enregistrement…'
+  const {error} = await supabase.rpc('update_cash_float_target',{p_cash_float_target:value})
+  if (error) return msg.textContent = 'Erreur : '+error.message
+  msg.textContent = 'Fonds de caisse cible enregistré.'
+  await loadData()
+}
+
+function suggestCashDeposit() {
+  const period = remittancePeriod()
+  const rows = remittancePaymentRows('cash',period)
+    .filter(p => !remittanceForPayment(p.id))
+  const currentReserve = remittanceBatches
+    .filter(b => b.status !== 'cancelled' && b.remittance_kind === 'cash_reserve')
+    .reduce((sum,b) => sum + remittanceAmount(b.id),0)
+  const target = num(settings?.cash_float_target)
+  const unassigned = rows.reduce((sum,p) => sum+num(p.amount),0)
+  const reserveNeeded = Math.max(0,target-currentReserve)
+  const depositTarget = Math.max(0,unassigned-reserveNeeded)
+
+  document.querySelectorAll('.remittance-check[data-method="cash"]').forEach(x => x.checked=false)
+  if (depositTarget <= 0) return
+
+  let selected=0
+  for (const payment of rows) {
+    if (selected >= depositTarget) break
+    const cb = document.querySelector(`.remittance-check[data-payment-id="${payment.id}"]`)
+    if (cb && !cb.disabled) {
+      cb.checked=true
+      selected+=num(payment.amount)
+    }
+  }
+  document.querySelector('#cashSuggestion').innerHTML =
+    `Proposition sélectionnée : <b>${eur(selected)}</b> pour une cible d’environ <b>${eur(depositTarget)}</b>. Tu peux ajuster les cases avant de créer la remise.`
+  updateRemittanceSelectionTotals()
+}
+
+async function createRemittanceFromSelection(method,kind) {
+  const msg = document.querySelector(method === 'cash' ? '#cashRemittanceMsg' : '#chequeRemittanceMsg')
+  let ids = selectedRemittancePaymentIds(method)
+  if (kind === 'cash_reserve') {
+    ids = ids.filter(id => !remittanceForPayment(id))
+  }
+  if (!ids.length) return msg.textContent = kind === 'cash_reserve'
+    ? 'Sélectionne au moins un encaissement non encore affecté.'
+    : 'Sélectionne au moins un paiement.'
+
+  const name = document.querySelector(method === 'cash' ? '#cashRemittanceName' : '#chequeRemittanceName').value.trim() || null
+  const depositDate = kind === 'bank_deposit'
+    ? (document.querySelector(method === 'cash' ? '#cashDepositDate' : '#chequeDepositDate').value || null)
+    : null
+
+  msg.textContent = 'Enregistrement…'
+  const {error} = await supabase.rpc('create_remittance_batch',{
+    p_payment_method:method,
+    p_kind:kind,
+    p_payment_ids:ids,
+    p_name:name,
+    p_deposit_date:depositDate,
+    p_note:null
+  })
+  if (error) return msg.textContent = 'Erreur : '+error.message
+
+  msg.textContent = kind === 'cash_reserve' ? 'Espèces affectées au fonds de caisse.' : 'Remise créée.'
+  document.querySelector(method === 'cash' ? '#cashRemittanceName' : '#chequeRemittanceName').value=''
+  await loadData()
+}
+
+async function saveRemittanceDates(batchId) {
+  const deposit = document.querySelector(`.remittance-deposit-date[data-id="${batchId}"]`)?.value || null
+  const credited = document.querySelector(`.remittance-credit-date[data-id="${batchId}"]`)?.value || null
+
+  if (credited && !deposit) {
+    return alert('Renseigne d’abord la date de dépôt.')
+  }
+  const {error} = await supabase.rpc('update_remittance_batch',{
+    p_batch_id:batchId,
+    p_deposit_date:deposit,
+    p_credited_date:credited,
+    p_note:null
+  })
+  if (error) return alert(error.message)
+  await loadData()
+}
+
+async function cancelRemittance(batchId) {
+  if (!confirm('Annuler cette affectation ? Les paiements redeviendront disponibles.')) return
+  const {error} = await supabase.rpc('cancel_remittance_batch',{p_batch_id:batchId})
+  if (error) return alert(error.message)
+  await loadData()
 }
 
 function renderPilotage() {
