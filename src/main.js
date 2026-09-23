@@ -335,13 +335,26 @@ function renderShell() {
               </div>
               <button id="resetRemittanceRangeBtn" class="secondary">Mois complet</button>
             </div>
-            <div>
-              <label class="small">Fonds de caisse cible</label>
-              <div class="row">
-                <input id="cashFloatTarget" class="field compact" type="number" min="0" step="10" placeholder="200">
-                <span>€</span>
-                <button id="saveCashFloatTargetBtn" class="secondary">Enregistrer</button>
+            <div class="cash-float-settings">
+              <div>
+                <label class="small">Fonds de caisse cible</label>
+                <div class="row">
+                  <input id="cashFloatTarget" class="field compact" type="number" min="0" step="1" placeholder="200">
+                  <span>€</span>
+                </div>
               </div>
+              <div>
+                <label class="small">ou % des espèces encaissées</label>
+                <div class="row">
+                  <input id="cashFloatTargetPercent" class="field compact" type="number" min="0" max="100" step="1" placeholder="20">
+                  <span>%</span>
+                </div>
+              </div>
+              <div class="cash-float-proposal">
+                <div class="small">Montant proposé sur la période</div>
+                <b id="cashFloatComputed">—</b>
+              </div>
+              <button id="saveCashFloatTargetBtn" class="secondary">Enregistrer</button>
             </div>
             <div id="cashFloatMsg" class="small"></div>
           </div>
@@ -1043,6 +1056,13 @@ function bindEvents() {
   }
   document.querySelector('#toggleAllCashBtn').onclick = () => toggleAllRemittanceChecks('cash')
   document.querySelector('#toggleAllChequeBtn').onclick = () => toggleAllRemittanceChecks('cheque')
+  document.querySelector('#cashFloatTarget').oninput = () => {
+    document.querySelector('#cashFloatTargetPercent').value = ''
+    refreshCashFloatProposal()
+  }
+  document.querySelector('#cashFloatTargetPercent').oninput = () => {
+    refreshCashFloatProposal(true)
+  }
   document.querySelector('#saveCashFloatTargetBtn').onclick = saveCashFloatTarget
   document.querySelector('#suggestCashDepositBtn').onclick = suggestCashDeposit
   document.querySelector('#keepCashReserveBtn').onclick = () => createRemittanceFromSelection('cash','cash_reserve')
@@ -2118,7 +2138,7 @@ function renderBackupPanel() {
   const techRows = document.querySelector('#backupTechRows')
   if (techRows) {
     techRows.innerHTML = `
-      <tr><td>Version application</td><td>Sprint 6B.1</td></tr>
+      <tr><td>Version application</td><td>Sprint 6B.2</td></tr>
       <tr><td>Organisation</td><td>${esc(organizationId || '—')}</td></tr>
       <tr><td>Snapshot hors ligne</td><td>${offlineSnapshot?.saved_at ? fmtDateTime(offlineSnapshot.saved_at) : 'Non disponible'}</td></tr>
       <tr><td>Produits mémorisés</td><td>${offlineSnapshot?.products?.length ?? products.length}</td></tr>
@@ -2913,6 +2933,36 @@ function renderRemittanceBatches() {
   document.querySelectorAll('.cancel-remittance').forEach(btn => btn.onclick = () => cancelRemittance(btn.dataset.id))
 }
 
+function currentRemittanceCashTotal() {
+  const period = remittancePeriod()
+  return remittancePaymentRows('cash',period).reduce((sum,p) => sum + num(p.amount),0)
+}
+
+function effectiveCashFloatTarget(cashTotal = currentRemittanceCashTotal()) {
+  const percent = num(settings?.cash_float_target_percent)
+  const mode = settings?.cash_float_target_mode || (percent > 0 ? 'percent' : 'amount')
+  return mode === 'percent'
+    ? cashTotal * percent / 100
+    : num(settings?.cash_float_target)
+}
+
+function refreshCashFloatProposal(syncAmountFromPercent = false) {
+  const amountInput = document.querySelector('#cashFloatTarget')
+  const percentInput = document.querySelector('#cashFloatTargetPercent')
+  const computed = document.querySelector('#cashFloatComputed')
+  if (!amountInput || !percentInput || !computed) return
+
+  const cashTotal = currentRemittanceCashTotal()
+  const pct = Math.max(0,Math.min(100,Number(percentInput.value || 0)))
+  if (pct > 0) {
+    const proposed = cashTotal * pct / 100
+    computed.textContent = eur(proposed)
+    if (syncAmountFromPercent) amountInput.value = proposed.toFixed(2)
+  } else {
+    computed.textContent = eur(Math.max(0,Number(amountInput.value || 0)))
+  }
+}
+
 function renderRemittances() {
   const section = document.querySelector('#remittances')
   if (!section || !settings) return
@@ -2944,23 +2994,27 @@ function renderRemittances() {
   const unassignedCash = cashRows.reduce((sum,p) => remittanceForPayment(p.id) ? sum : sum + num(p.amount),0)
   const unassignedCheques = chequeRows.reduce((sum,p) => remittanceForPayment(p.id) ? sum : sum + num(p.amount),0)
 
+  const target = effectiveCashFloatTarget(cashTotal)
+  const targetMode = settings.cash_float_target_mode || 'amount'
+  const targetPercent = num(settings.cash_float_target_percent)
+
   document.querySelector('#remittanceKpis').innerHTML = `
     <div class="card kpi"><div class="muted">CA encaissé période</div><div class="kpi-value">${eur(totalCa)}</div></div>
     <div class="card kpi"><div class="muted">Espèces encaissées</div><div class="kpi-value">${eur(cashTotal)}</div><div class="small">${cashShare.toFixed(1)} % du CA de la période</div></div>
     <div class="card kpi"><div class="muted">Espèces en remises</div><div class="kpi-value">${eur(bankedCash)}</div></div>
-    <div class="card kpi"><div class="muted">Fonds de caisse actuel</div><div class="kpi-value">${eur(currentReserve)}</div><div class="small">Cible : ${eur(settings.cash_float_target)}</div></div>
+    <div class="card kpi"><div class="muted">Fonds de caisse actuel</div><div class="kpi-value">${eur(currentReserve)}</div><div class="small">Cible : ${eur(target)}${targetMode==='percent' ? ' · '+targetPercent.toFixed(0)+' % des espèces' : ''}</div></div>
     <div class="card kpi"><div class="muted">Espèces à affecter</div><div class="kpi-value">${eur(unassignedCash)}</div></div>
     <div class="card kpi"><div class="muted">Chèques à affecter</div><div class="kpi-value">${eur(unassignedCheques)}</div><div class="small">Total chèques période : ${eur(chequeTotal)}</div></div>
   `
-
-  const target = num(settings.cash_float_target)
   const reserveNeeded = Math.max(0,target-currentReserve)
   const suggestedDeposit = Math.max(0,unassignedCash-reserveNeeded)
   document.querySelector('#cashSuggestion').innerHTML = suggestedDeposit > 0
     ? `Avec un fonds de caisse cible de <b>${eur(target)}</b>, la remise espèces suggérée sur les paiements encore disponibles est d’environ <b>${eur(suggestedDeposit)}</b>.`
     : `Aucune remise espèces suggérée actuellement. Fonds de caisse cible : <b>${eur(target)}</b>.`
 
-  document.querySelector('#cashFloatTarget').value = target.toFixed(0)
+  document.querySelector('#cashFloatTarget').value = target.toFixed(2)
+  document.querySelector('#cashFloatTargetPercent').value = targetMode === 'percent' && targetPercent > 0 ? targetPercent.toFixed(0) : ''
+  refreshCashFloatProposal()
   renderRemittancePaymentTable('cash',cashRows,'cashRemittanceRows')
   renderRemittancePaymentTable('cheque',chequeRows,'chequeRemittanceRows')
   renderRemittanceBatches()
@@ -2973,11 +3027,20 @@ function selectedRemittancePaymentIds(method) {
 
 async function saveCashFloatTarget() {
   const msg = document.querySelector('#cashFloatMsg')
-  const value = Math.max(0,Number(document.querySelector('#cashFloatTarget').value || 0))
+  const amount = Math.max(0,Number(document.querySelector('#cashFloatTarget').value || 0))
+  const percent = Math.max(0,Math.min(100,Number(document.querySelector('#cashFloatTargetPercent').value || 0)))
+  const mode = percent > 0 ? 'percent' : 'amount'
+
   msg.textContent = 'Enregistrement…'
-  const {error} = await supabase.rpc('update_cash_float_target',{p_cash_float_target:value})
+  const {error} = await supabase.rpc('update_cash_float_settings',{
+    p_cash_float_target:amount,
+    p_cash_float_target_percent:percent,
+    p_cash_float_target_mode:mode
+  })
   if (error) return msg.textContent = 'Erreur : '+error.message
-  msg.textContent = 'Fonds de caisse cible enregistré.'
+  msg.textContent = mode === 'percent'
+    ? `Cible enregistrée : ${percent.toFixed(0)} % des espèces.`
+    : 'Fonds de caisse cible enregistré.'
   await loadData()
 }
 
@@ -2990,7 +3053,8 @@ function suggestCashDeposit() {
   const currentReserve = remittanceBatches
     .filter(b => b.status !== 'cancelled' && b.remittance_kind === 'cash_reserve')
     .reduce((sum,b) => sum + remittanceAmount(b.id),0)
-  const target = num(settings?.cash_float_target)
+  const cashTotal = remittancePaymentRows('cash',period).reduce((sum,p) => sum+num(p.amount),0)
+  const target = effectiveCashFloatTarget(cashTotal)
   const unassigned = rows.reduce((sum,p) => sum+num(p.amount),0)
   const reserveNeeded = Math.max(0,target-currentReserve)
   const depositTarget = Math.max(0,unassigned-reserveNeeded)
