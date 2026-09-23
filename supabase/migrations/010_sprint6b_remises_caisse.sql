@@ -3,7 +3,7 @@
 -- Idempotent.
 
 alter table public.settings
-  add column if not exists cash_float_target numeric not null default 200
+  add column if not exists cash_float_target numeric not null default 0
   check (cash_float_target >= 0);
 
 create table if not exists public.remittance_batches (
