@@ -9,8 +9,8 @@ Recaler le Pilotage mensuel à partir des données du Sprint 6B sans modifier la
 - Espèces conservées physiquement.
 - Remises espèces préparées / déposées / créditées.
 - Chèques préparés / déposés / crédités.
-- Sous-total analytique des remises espèces dont le libellé commence par `CAISSE N` suivi de 4 chiffres, par exemple `CAISSE N2309`.
-- Comparatif analytique : CA total du mois vs CA total moins le sous-total `CAISSE N####`.
+- Indicateur affiché sous le nom **Caisse banc** : sous-total analytique des remises espèces dont le libellé commence par `CAISSE N` suivi de 4 chiffres, par exemple `CAISSE N2309`.
+- Comparatif analytique : CA total du mois vs CA total moins **Caisse banc**.
   Ce comparatif reste un indicateur de gestion et ne remplace pas le CA encaissé utilisé pour les seuils / URSSAF.
 
 ## Comparaison N / N-1
