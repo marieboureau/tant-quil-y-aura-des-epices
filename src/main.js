@@ -352,6 +352,7 @@ function renderShell() {
                 <tbody id="cashRemittanceRows"></tbody>
               </table>
             </div>
+            <div class="remittance-selection-total">Sélection : <b id="cashSelectionTotal">0,00 €</b></div>
             <div class="remittance-actions">
               <input id="cashRemittanceName" class="field" placeholder="Nom facultatif — ex. ESP-2026-001">
               <input id="cashDepositDate" class="field" type="date" title="Date de dépôt">
@@ -374,6 +375,7 @@ function renderShell() {
                 <tbody id="chequeRemittanceRows"></tbody>
               </table>
             </div>
+            <div class="remittance-selection-total">Sélection : <b id="chequeSelectionTotal">0,00 €</b></div>
             <div class="remittance-actions">
               <input id="chequeRemittanceName" class="field" placeholder="Nom facultatif — ex. CHQ-2026-001">
               <input id="chequeDepositDate" class="field" type="date" title="Date de dépôt">
@@ -2780,6 +2782,21 @@ function renderRemittancePaymentTable(method, rows, bodyId) {
       <td><span class="status ${batch ? 'ok' : 'off'}">${label}</span></td>
     </tr>`
   }).join('') || '<tr><td colspan="5" class="muted">Aucun paiement sur cette période.</td></tr>'
+
+  body.querySelectorAll('.remittance-check').forEach(box => box.onchange = updateRemittanceSelectionTotals)
+  updateRemittanceSelectionTotals()
+}
+
+function updateRemittanceSelectionTotals() {
+  for (const method of ['cash','cheque']) {
+    const total = [...document.querySelectorAll(`.remittance-check[data-method="${method}"]:checked`)]
+      .reduce((sum,box) => {
+        const payment = payments.find(p => p.id === box.dataset.paymentId)
+        return sum + num(payment?.amount)
+      },0)
+    const el = document.querySelector(method === 'cash' ? '#cashSelectionTotal' : '#chequeSelectionTotal')
+    if (el) el.textContent = eur(total)
+  }
 }
 
 function renderRemittanceBatches() {
@@ -2905,6 +2922,7 @@ function suggestCashDeposit() {
   }
   document.querySelector('#cashSuggestion').innerHTML =
     `Proposition sélectionnée : <b>${eur(selected)}</b> pour une cible d’environ <b>${eur(depositTarget)}</b>. Tu peux ajuster les cases avant de créer la remise.`
+  updateRemittanceSelectionTotals()
 }
 
 async function createRemittanceFromSelection(method,kind) {
