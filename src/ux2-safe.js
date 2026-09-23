@@ -23,6 +23,7 @@ supabase.rpc = (name, args = {}, options) => {
 
 const num = v => Number(v || 0)
 const eur = v => num(v).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})
+const eur0 = v => Math.round(num(v)).toLocaleString('fr-FR')+' €'
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))
 const monthNames = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc']
 let enhanceTimer = null
@@ -316,7 +317,7 @@ function renderStackedChart(monthly){
 
 function gauge(label,value,threshold){
   const pct=threshold?Math.min(100,value/threshold*100):0
-  return `<div class="gauge-block"><div class="row space"><b>${esc(label)}</b><span>${eur(value)} / ${eur(threshold)}</span></div><div class="gauge"><span style="width:${pct}%"></span></div><div class="small">${pct.toFixed(1)} % du seuil</div></div>`
+  return `<div class="gauge-block"><div class="row space"><b>${esc(label)}</b><span>${eur0(value)} / ${eur0(threshold)}</span></div><div class="gauge"><span style="width:${pct}%"></span></div><div class="small">${pct.toFixed(1)} % du seuil</div></div>`
 }
 
 function renderDualThresholds(monthly,settings){
@@ -339,9 +340,9 @@ function renderDualThresholds(monthly,settings){
       ${thresholds.map(([label,threshold])=>gauge(label,total,threshold)).join('')}
     </div>
     <div>
-      <h3>CA encaissé moins CAISSE N####</h3>
+      <h3>CA encaissé moins Caisse banc</h3>
       ${thresholds.map(([label,threshold])=>gauge(label,managementCa,threshold)).join('')}
-      <div class="small">Sous-total CAISSE N#### : <b>${eur(caisseN)}</b></div>
+      <div class="small">Caisse banc : <b>${eur(caisseN)}</b></div>
     </div>
   </div>`
 }
@@ -351,7 +352,7 @@ function renderManagement(monthly){
   if(!body)return
   const current=monthly.slice(0,new Date().getMonth()+1)
   const head=body.closest('table')?.querySelector('thead')
-  if(head)head.innerHTML='<tr><th>Mois</th><th>CA total</th><th>CAISSE N####</th><th>CA après CAISSE N####</th><th>dont espèces</th><th>Achats consommés</th><th>Marge brute</th><th>Taux marge brute</th><th>Autres dépenses</th><th>Cotisations estimées</th><th>Versement libératoire estimé</th><th>Solde gestion estimé</th><th>Marge nette</th></tr>'
+  if(head)head.innerHTML='<tr><th>Mois</th><th>CA total</th><th>Caisse banc</th><th>CA après Caisse banc</th><th>dont espèces</th><th>Achats consommés</th><th>Marge brute</th><th>Taux marge brute</th><th>Autres dépenses</th><th>Cotisations estimées</th><th>Versement libératoire estimé</th><th>Solde gestion estimé</th><th>Marge nette</th></tr>'
 
   const total=current.reduce((a,m)=>({
     ca:a.ca+m.ca,caisseN:a.caisseN+m.caisseN,managementCa:a.managementCa+m.managementCa,
