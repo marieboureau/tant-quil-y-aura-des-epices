@@ -334,3 +334,35 @@ aside > .sub{
   background:#f7f2ea;
   font-size:13px;
 }
+
+
+/* Sprint 6B.1 — filtres de période et sélection rapide */
+.remittance-date-range{
+  display:grid;
+  grid-template-columns:1fr 1fr auto;
+  gap:8px;
+  align-items:end;
+}
+.remittance-date-range .field{
+  min-width:145px;
+}
+#remittances .compact-top > .row{
+  gap:8px;
+  flex-wrap:wrap;
+}
+@media(max-width:900px){
+  .remittance-date-range{
+    grid-template-columns:1fr 1fr;
+  }
+  .remittance-date-range #resetRemittanceRangeBtn{
+    grid-column:1/-1;
+  }
+}
+@media(max-width:600px){
+  .remittance-date-range{
+    grid-template-columns:1fr;
+  }
+  .remittance-date-range #resetRemittanceRangeBtn{
+    grid-column:auto;
+  }
+}

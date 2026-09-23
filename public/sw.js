@@ -1,4 +1,4 @@
-const CACHE = 'epices-app-v4'
+const CACHE = 'epices-app-v5'
 const APP_SHELL = [
   '/',
   '/index.html',

@@ -321,8 +321,19 @@ function renderShell() {
 
           <div class="card remittance-toolbar">
             <div>
-              <label class="small">Période</label>
+              <label class="small">Mois</label>
               <input id="remittanceMonth" class="field compact" type="month">
+            </div>
+            <div class="remittance-date-range">
+              <div>
+                <label class="small">Du</label>
+                <input id="remittanceDateFrom" class="field compact" type="date">
+              </div>
+              <div>
+                <label class="small">Au</label>
+                <input id="remittanceDateTo" class="field compact" type="date">
+              </div>
+              <button id="resetRemittanceRangeBtn" class="secondary">Mois complet</button>
             </div>
             <div>
               <label class="small">Fonds de caisse cible</label>
@@ -343,7 +354,10 @@ function renderShell() {
                 <h2>Espèces</h2>
                 <div class="small">Sélectionne les encaissements à conserver physiquement ou à regrouper dans une remise bancaire.</div>
               </div>
-              <button id="suggestCashDepositBtn" class="secondary">Proposer une remise</button>
+              <div class="row">
+                <button id="toggleAllCashBtn" class="secondary">Tout cocher</button>
+                <button id="suggestCashDepositBtn" class="secondary">Proposer une remise</button>
+              </div>
             </div>
             <div id="cashSuggestion" class="notice" style="margin:8px 0"></div>
             <div class="table-wrap">
@@ -368,6 +382,7 @@ function renderShell() {
                 <h2>Chèques</h2>
                 <div class="small">Regroupe les chèques en remise puis renseigne leur dépôt et leur crédit sur le compte.</div>
               </div>
+              <button id="toggleAllChequeBtn" class="secondary">Tout cocher</button>
             </div>
             <div class="table-wrap">
               <table>
@@ -1016,7 +1031,18 @@ function bindEvents() {
   document.querySelector('#closeImportBtn').onclick = closeImport
   document.querySelector('#applyImportBtn').onclick = applyImport
   document.querySelector('#refreshRemittancesBtn').onclick = loadData
-  document.querySelector('#remittanceMonth').onchange = renderRemittances
+  document.querySelector('#remittanceMonth').onchange = () => {
+    resetRemittanceRangeToMonth()
+    renderRemittances()
+  }
+  document.querySelector('#remittanceDateFrom').onchange = renderRemittances
+  document.querySelector('#remittanceDateTo').onchange = renderRemittances
+  document.querySelector('#resetRemittanceRangeBtn').onclick = () => {
+    resetRemittanceRangeToMonth()
+    renderRemittances()
+  }
+  document.querySelector('#toggleAllCashBtn').onclick = () => toggleAllRemittanceChecks('cash')
+  document.querySelector('#toggleAllChequeBtn').onclick = () => toggleAllRemittanceChecks('cheque')
   document.querySelector('#saveCashFloatTargetBtn').onclick = saveCashFloatTarget
   document.querySelector('#suggestCashDepositBtn').onclick = suggestCashDeposit
   document.querySelector('#keepCashReserveBtn').onclick = () => createRemittanceFromSelection('cash','cash_reserve')
@@ -2092,7 +2118,7 @@ function renderBackupPanel() {
   const techRows = document.querySelector('#backupTechRows')
   if (techRows) {
     techRows.innerHTML = `
-      <tr><td>Version application</td><td>Sprint 6B</td></tr>
+      <tr><td>Version application</td><td>Sprint 6B.1</td></tr>
       <tr><td>Organisation</td><td>${esc(organizationId || '—')}</td></tr>
       <tr><td>Snapshot hors ligne</td><td>${offlineSnapshot?.saved_at ? fmtDateTime(offlineSnapshot.saved_at) : 'Non disponible'}</td></tr>
       <tr><td>Produits mémorisés</td><td>${offlineSnapshot?.products?.length ?? products.length}</td></tr>
@@ -2701,23 +2727,60 @@ function pilotageMonthlyData() {
 // SPRINT 6B — REMISES & CAISSE
 // =========================================================
 
+function monthBounds(monthValue) {
+  const [year,monthNo] = monthValue.split('-').map(Number)
+  const start = new Date(year,monthNo-1,1)
+  const endExclusive = new Date(year,monthNo,1)
+  const endInclusive = new Date(year,monthNo,0)
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  return {year,monthNo,start,endExclusive,endInclusive,startIso:iso(start),endIso:iso(endInclusive)}
+}
+
+function resetRemittanceRangeToMonth() {
+  const monthInput = document.querySelector('#remittanceMonth')
+  const now = new Date()
+  const fallback = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+  const month = monthInput?.value || fallback
+  if (monthInput && !monthInput.value) monthInput.value = month
+  const bounds = monthBounds(month)
+  const from = document.querySelector('#remittanceDateFrom')
+  const to = document.querySelector('#remittanceDateTo')
+  if (from) from.value = bounds.startIso
+  if (to) to.value = bounds.endIso
+}
+
 function remittancePeriod() {
   const input = document.querySelector('#remittanceMonth')
   const now = new Date()
   const fallback = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
   const month = input?.value || fallback
   if (input && !input.value) input.value = month
-  const [year,monthNo] = month.split('-').map(Number)
-  const start = new Date(year,monthNo-1,1)
-  const end = new Date(year,monthNo,1)
-  return {month,year,monthNo,start,end}
+  const bounds = monthBounds(month)
+
+  const fromInput = document.querySelector('#remittanceDateFrom')
+  const toInput = document.querySelector('#remittanceDateTo')
+  if (fromInput && !fromInput.value) fromInput.value = bounds.startIso
+  if (toInput && !toInput.value) toInput.value = bounds.endIso
+
+  let from = fromInput?.value || bounds.startIso
+  let to = toInput?.value || bounds.endIso
+  if (from < bounds.startIso) from = bounds.startIso
+  if (to > bounds.endIso) to = bounds.endIso
+  if (to < from) to = from
+
+  if (fromInput) fromInput.value = from
+  if (toInput) toInput.value = to
+
+  const start = new Date(from+'T00:00:00')
+  const end = new Date(to+'T23:59:59.999')
+  return {month,year:bounds.year,monthNo:bounds.monthNo,start,end,from,to}
 }
 
 function paymentInRemittancePeriod(payment, period) {
   const sale = saleById(payment.sale_id)
   if (!sale || sale.status !== 'completed') return false
   const d = new Date(sale.sold_at)
-  return d >= period.start && d < period.end
+  return d >= period.start && d <= period.end
 }
 
 function activeRemittanceBatch(batchId) {
@@ -2783,8 +2846,12 @@ function renderRemittancePaymentTable(method, rows, bodyId) {
     </tr>`
   }).join('') || '<tr><td colspan="5" class="muted">Aucun paiement sur cette période.</td></tr>'
 
-  body.querySelectorAll('.remittance-check').forEach(box => box.onchange = updateRemittanceSelectionTotals)
+  body.querySelectorAll('.remittance-check').forEach(box => box.onchange = () => {
+    updateRemittanceSelectionTotals()
+    syncRemittanceToggleLabels()
+  })
   updateRemittanceSelectionTotals()
+  syncRemittanceToggleLabels()
 }
 
 function updateRemittanceSelectionTotals() {
@@ -2796,6 +2863,24 @@ function updateRemittanceSelectionTotals() {
       },0)
     const el = document.querySelector(method === 'cash' ? '#cashSelectionTotal' : '#chequeSelectionTotal')
     if (el) el.textContent = eur(total)
+  }
+}
+
+function toggleAllRemittanceChecks(method) {
+  const boxes = [...document.querySelectorAll(`.remittance-check[data-method="${method}"]:not(:disabled)`)]
+  if (!boxes.length) return
+  const shouldCheck = boxes.some(box => !box.checked)
+  boxes.forEach(box => { box.checked = shouldCheck })
+  const btn = document.querySelector(method === 'cash' ? '#toggleAllCashBtn' : '#toggleAllChequeBtn')
+  if (btn) btn.textContent = shouldCheck ? 'Tout décocher' : 'Tout cocher'
+  updateRemittanceSelectionTotals()
+}
+
+function syncRemittanceToggleLabels() {
+  for (const method of ['cash','cheque']) {
+    const boxes = [...document.querySelectorAll(`.remittance-check[data-method="${method}"]:not(:disabled)`)]
+    const btn = document.querySelector(method === 'cash' ? '#toggleAllCashBtn' : '#toggleAllChequeBtn')
+    if (btn) btn.textContent = boxes.length && boxes.every(box => box.checked) ? 'Tout décocher' : 'Tout cocher'
   }
 }
 
@@ -2838,7 +2923,7 @@ function renderRemittances() {
   const periodSales = sales.filter(s => {
     if (s.status !== 'completed') return false
     const d = new Date(s.sold_at)
-    return d >= period.start && d < period.end
+    return d >= period.start && d <= period.end
   })
   const totalCa = periodSales.reduce((sum,s) => sum + num(s.total_ttc),0)
   const cashTotal = cashRows.reduce((sum,p) => sum + num(p.amount),0)
@@ -2900,6 +2985,8 @@ function suggestCashDeposit() {
   const period = remittancePeriod()
   const rows = remittancePaymentRows('cash',period)
     .filter(p => !remittanceForPayment(p.id))
+    .sort((a,b) => num(a.amount) - num(b.amount))
+
   const currentReserve = remittanceBatches
     .filter(b => b.status !== 'cancelled' && b.remittance_kind === 'cash_reserve')
     .reduce((sum,b) => sum + remittanceAmount(b.id),0)
@@ -2909,20 +2996,52 @@ function suggestCashDeposit() {
   const depositTarget = Math.max(0,unassigned-reserveNeeded)
 
   document.querySelectorAll('.remittance-check[data-method="cash"]').forEach(x => x.checked=false)
-  if (depositTarget <= 0) return
+  if (depositTarget <= 0) {
+    updateRemittanceSelectionTotals()
+    syncRemittanceToggleLabels()
+    return
+  }
 
-  let selected=0
+  const chosen = []
+  const remaining = []
+  let selected = 0
+
+  // On commence par les petits encaissements pour affiner la composition.
   for (const payment of rows) {
-    if (selected >= depositTarget) break
-    const cb = document.querySelector(`.remittance-check[data-payment-id="${payment.id}"]`)
-    if (cb && !cb.disabled) {
-      cb.checked=true
-      selected+=num(payment.amount)
+    const amount = num(payment.amount)
+    if (selected + amount <= depositTarget + 0.001) {
+      chosen.push(payment)
+      selected += amount
+    } else {
+      remaining.push(payment)
     }
   }
+
+  // Si un dernier paiement améliore réellement l'écart à la cible, on l'ajoute.
+  const currentGap = Math.abs(depositTarget-selected)
+  let best = null
+  let bestGap = currentGap
+  for (const payment of remaining) {
+    const gap = Math.abs(depositTarget-(selected+num(payment.amount)))
+    if (gap < bestGap) {
+      best = payment
+      bestGap = gap
+    }
+  }
+  if (best) {
+    chosen.push(best)
+    selected += num(best.amount)
+  }
+
+  for (const payment of chosen) {
+    const cb = document.querySelector(`.remittance-check[data-payment-id="${payment.id}"]`)
+    if (cb && !cb.disabled) cb.checked=true
+  }
+
   document.querySelector('#cashSuggestion').innerHTML =
-    `Proposition sélectionnée : <b>${eur(selected)}</b> pour une cible d’environ <b>${eur(depositTarget)}</b>. Tu peux ajuster les cases avant de créer la remise.`
+    `Proposition sélectionnée : <b>${eur(selected)}</b> pour une cible d’environ <b>${eur(depositTarget)}</b>. Les plus petits encaissements sont privilégiés pour rester au plus près de la cible.`
   updateRemittanceSelectionTotals()
+  syncRemittanceToggleLabels()
 }
 
 async function createRemittanceFromSelection(method,kind) {
