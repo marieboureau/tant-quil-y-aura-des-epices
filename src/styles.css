@@ -81,3 +81,217 @@ dialog{border:0;background:transparent;padding:0}dialog::backdrop{background:rgb
   #settings .row{align-items:stretch}
   #settings .row .field{flex:1}
 }
+
+
+/* Sprint 6C.2 — responsive robuste en vue fractionnée */
+
+/* Barre Remises & caisse : évite tout chevauchement en grand écran comme en split view */
+#remittances .remittance-toolbar{
+  display:grid!important;
+  grid-template-columns:minmax(170px,220px) minmax(0,1fr)!important;
+  grid-template-areas:
+    "month dates"
+    "cash cash"
+    "msg msg";
+  gap:14px!important;
+  align-items:end!important;
+}
+#remittances .remittance-toolbar > div:first-child{
+  grid-area:month;
+  min-width:0;
+}
+#remittances .remittance-date-range{
+  grid-area:dates;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto!important;
+  gap:8px!important;
+  min-width:0;
+}
+#remittances .remittance-date-range > div{
+  min-width:0;
+}
+#remittances .remittance-date-range .field{
+  min-width:0!important;
+  width:100%!important;
+}
+#remittances .cash-float-settings{
+  grid-area:cash;
+  display:grid!important;
+  grid-template-columns:minmax(140px,.8fr) minmax(170px,.9fr) minmax(180px,1fr) auto!important;
+  gap:10px!important;
+  align-items:end!important;
+  min-width:0;
+}
+#remittances .cash-float-settings > div{
+  min-width:0;
+}
+#remittances .cash-float-settings .row{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) auto!important;
+  gap:7px!important;
+  align-items:center!important;
+  flex-wrap:nowrap!important;
+}
+#remittances .cash-float-settings .field{
+  min-width:0!important;
+  width:100%!important;
+}
+#remittances .cash-float-settings .row > span{
+  display:block!important;
+  white-space:nowrap!important;
+  margin:0!important;
+}
+#remittances #cashFloatMsg{
+  grid-area:msg;
+}
+
+@media(max-width:1200px){
+  #remittances .remittance-toolbar{
+    grid-template-columns:1fr!important;
+    grid-template-areas:
+      "month"
+      "dates"
+      "cash"
+      "msg";
+  }
+}
+
+@media(max-width:760px){
+  #remittances .remittance-date-range{
+    grid-template-columns:1fr!important;
+  }
+  #remittances .remittance-date-range #resetRemittanceRangeBtn{
+    width:100%;
+  }
+  #remittances .cash-float-settings{
+    grid-template-columns:1fr 1fr!important;
+  }
+  #remittances .cash-float-proposal,
+  #remittances #saveCashFloatTargetBtn{
+    width:100%;
+  }
+}
+
+@media(max-width:520px){
+  #remittances .cash-float-settings{
+    grid-template-columns:1fr!important;
+  }
+}
+
+/* Vue fractionnée / navigation en haut : aucune largeur enfant ne doit élargir la page */
+@media(max-width:900px){
+  html,body,#app,.app,main,aside,.section,.section.active,.card,.grid,.top{
+    min-width:0!important;
+    max-width:100%!important;
+  }
+
+  html,body,#app{
+    width:100%!important;
+    overflow-x:hidden!important;
+  }
+
+  .app{
+    width:100%!important;
+    grid-template-columns:minmax(0,1fr)!important;
+    overflow-x:hidden!important;
+  }
+
+  aside{
+    width:100%!important;
+    overflow:hidden!important;
+    padding:6px 8px!important;
+  }
+
+  nav{
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+    display:flex!important;
+    overflow-x:auto!important;
+    overflow-y:hidden!important;
+    gap:4px!important;
+    scrollbar-width:none;
+  }
+  nav::-webkit-scrollbar{display:none}
+
+  nav button{
+    flex:0 0 auto!important;
+    min-width:auto!important;
+    min-height:38px!important;
+    padding:8px 10px!important;
+    font-size:14px!important;
+    white-space:nowrap!important;
+  }
+
+  main{
+    width:100%!important;
+    padding:10px!important;
+    margin:0!important;
+    overflow-x:hidden!important;
+  }
+
+  .card{
+    width:100%!important;
+    padding:12px!important;
+  }
+
+  .section.active > .top{
+    top:50px!important;
+  }
+
+  .kpi-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+  .kpi .kpi-value{
+    font-size:23px!important;
+  }
+
+  #pilotage,
+  #pilotage .card,
+  #pilotage .pilotage-chart,
+  #pilotage #pilotageChart{
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+    overflow:hidden!important;
+  }
+
+  #pilotage .pilotage-chart svg,
+  #pilotage #pilotageChart svg{
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+    height:auto!important;
+    display:block!important;
+  }
+
+  #pilotage .ux2-legend{
+    width:100%!important;
+    max-width:100%!important;
+    display:flex!important;
+    flex-wrap:wrap!important;
+    gap:7px 10px!important;
+    font-size:11px!important;
+  }
+
+  .table-wrap,
+  #pilotage .table-wrap{
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+    overflow-x:auto!important;
+    overflow-y:visible;
+  }
+
+  .table-wrap table,
+  #pilotage .table-wrap table{
+    width:max-content!important;
+    min-width:780px!important;
+  }
+}
+
+@media(max-width:600px){
+  .kpi-grid{
+    grid-template-columns:1fr!important;
+  }
+}
