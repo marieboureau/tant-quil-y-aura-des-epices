@@ -274,7 +274,7 @@ function renderStackedChart(monthly){
   const title=card?.querySelector('h2')
   const note=card?.querySelector('.small')
   if(title)title.textContent='CA encaissé par mode de paiement'
-  if(note)note.textContent='Barres empilées = CB / chèques / espèces · ligne pleine = marge brute % · ligne pointillée = marge nette %.'
+  if(note)note.textContent='Barres empilées = CB / chèques / espèces hors Caisse banc / Caisse banc · ligne pleine = marge brute % · ligne pointillée = marge nette %.'
 
   const W=1100,H=350,pad={l:30,r:25,t:45,b:45},iw=W-pad.l-pad.r,ih=H-pad.t-pad.b
   const max=Math.max(1,...monthly.map(m=>m.ca))
@@ -284,15 +284,21 @@ function renderStackedChart(monthly){
   const yp=v=>pad.t+ih-((Math.max(-20,Math.min(100,v))+20)/120)*ih
 
   const bars=monthly.map(m=>{
-    const total=m.card+m.cheque+m.cash
+    const cashBank=Math.min(num(m.cash),Math.max(0,num(m.caisseN)))
+    const cashOutside=Math.max(0,num(m.cash)-cashBank)
+    const total=num(m.card)+num(m.cheque)+cashOutside+cashBank
     let acc=0
+
     const seg=(value,cls)=>{
       if(!value)return ''
-      const y0=y(acc);acc+=value;const yt=y(acc),h=y0-yt
+      const y0=y(acc)
+      acc+=value
+      const yt=y(acc),h=y0-yt
       const pct=total?value/total*100:0
       return `<rect x="${x(m.month)-bw/2}" y="${yt}" width="${bw}" height="${h}" class="ux2-svg-${cls}"></rect>${h>18?`<text x="${x(m.month)}" y="${yt+h/2+4}" text-anchor="middle" class="ux2-pct">${pct.toFixed(0)}%</text>`:''}`
     }
-    return `${seg(m.card,'card')}${seg(m.cheque,'cheque')}${seg(m.cash,'cash')}
+
+    return `${seg(m.card,'card')}${seg(m.cheque,'cheque')}${seg(cashOutside,'cash-outside')}${seg(cashBank,'cash-bank')}
       <text x="${x(m.month)}" y="${Math.max(16,y(total)-7)}" text-anchor="middle" class="chart-ca-label">${total?Math.round(total).toLocaleString('fr-FR')+' €':''}</text>
       <text x="${x(m.month)}" y="${H-14}" text-anchor="middle" class="chart-month">${monthNames[m.month]}</text>`
   }).join('')
@@ -305,9 +311,10 @@ function renderStackedChart(monthly){
   box.innerHTML=`<div class="ux2-legend">
     <span><i class="ux2-swatch card"></i>CB</span>
     <span><i class="ux2-swatch cheque"></i>Chèques</span>
-    <span><i class="ux2-swatch cash"></i>Espèces</span>
+    <span><i class="ux2-swatch cash-outside"></i>Espèces hors Caisse banc</span>
+    <span><i class="ux2-swatch cash-bank"></i>Caisse banc</span>
     <span>Marge brute %</span><span>Marge nette %</span>
-  </div><svg viewBox="0 0 ${W} ${H}">
+  </div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
     ${bars}
     <polyline points="${gross}" class="chart-line gross"></polyline>
     <polyline points="${net}" class="chart-line net"></polyline>

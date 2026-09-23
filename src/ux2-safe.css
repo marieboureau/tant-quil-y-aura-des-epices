@@ -17,3 +17,39 @@
 
 .ux2-svg-card{fill:#755638}.ux2-svg-cheque{fill:#aa8663}.ux2-svg-cash{fill:#d7c1a5}
 .ux2-pct{font-size:10px;font-weight:700;fill:white}
+
+
+/* Sprint 6C — graphique Pilotage plus lisible et réellement responsive */
+.ux2-swatch.cash-outside{background:#d7c1a5}
+.ux2-swatch.cash-bank{background:#9f7a56}
+.ux2-svg-cash-outside{fill:#d7c1a5}
+.ux2-svg-cash-bank{fill:#9f7a56}
+
+#pilotage .pilotage-chart{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  overflow:hidden;
+}
+#pilotage .pilotage-chart svg{
+  display:block;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  height:auto;
+}
+
+@media(max-width:1100px){
+  #pilotage .ux2-legend{
+    gap:8px 12px;
+  }
+  #pilotage .ux2-thresholds{
+    grid-template-columns:1fr;
+  }
+}
+
+@media(max-width:700px){
+  #pilotage .ux2-legend{
+    font-size:11px;
+  }
+}
