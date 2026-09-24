@@ -433,7 +433,13 @@ function renderShell() {
               <h1>Pilotage</h1>
               <div class="muted">CA, marge, seuils, URSSAF et compte de gestion.</div>
             </div>
-            <button id="refreshPilotageBtn" class="secondary">Actualiser</button>
+            <div class="pilotage-top-actions">
+              <div>
+                <label class="small">Mois analysé</label>
+                <input id="pilotageMonth" class="field compact" type="month">
+              </div>
+              <button id="refreshPilotageBtn" class="secondary">Actualiser</button>
+            </div>
           </div>
 
           <div id="pilotageKpis" class="kpi-grid"></div>
@@ -2139,7 +2145,7 @@ function renderBackupPanel() {
   const techRows = document.querySelector('#backupTechRows')
   if (techRows) {
     techRows.innerHTML = `
-      <tr><td>Version application</td><td>Sprint 6C.2</td></tr>
+      <tr><td>Version application</td><td>Sprint 6C Pilotage consolidé</td></tr>
       <tr><td>Organisation</td><td>${esc(organizationId || '—')}</td></tr>
       <tr><td>Snapshot hors ligne</td><td>${offlineSnapshot?.saved_at ? fmtDateTime(offlineSnapshot.saved_at) : 'Non disponible'}</td></tr>
       <tr><td>Produits mémorisés</td><td>${offlineSnapshot?.products?.length ?? products.length}</td></tr>
