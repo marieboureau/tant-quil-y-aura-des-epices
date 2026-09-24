@@ -2145,7 +2145,7 @@ function renderBackupPanel() {
   const techRows = document.querySelector('#backupTechRows')
   if (techRows) {
     techRows.innerHTML = `
-      <tr><td>Version application</td><td>Sprint 6C Pilotage consolidé</td></tr>
+      <tr><td>Version application</td><td>Sprint 6C.3</td></tr>
       <tr><td>Organisation</td><td>${esc(organizationId || '—')}</td></tr>
       <tr><td>Snapshot hors ligne</td><td>${offlineSnapshot?.saved_at ? fmtDateTime(offlineSnapshot.saved_at) : 'Non disponible'}</td></tr>
       <tr><td>Produits mémorisés</td><td>${offlineSnapshot?.products?.length ?? products.length}</td></tr>
