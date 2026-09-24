@@ -490,3 +490,12 @@ main,
     grid-template-columns:1fr;
   }
 }
+
+/* Sprint 6D */
+#sell .sell-product-section-title{grid-column:1/-1;display:flex;justify-content:space-between;gap:10px;margin:6px 0;padding:8px 2px 5px;border-bottom:1px solid var(--line)}
+#sell .top-product-badge{padding:2px 6px;border-radius:999px;background:#eee3d4;font-size:10px;font-weight:700}
+#clients .client-actions,#remittances .remittance-header-actions{flex-wrap:wrap;gap:7px}
+#remittances .remittance-filter.active{background:var(--accent);color:white;border-color:var(--accent)}
+#remittances #remittanceKpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:1100px){#remittances #remittanceKpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){#remittances #remittanceKpis{grid-template-columns:1fr}#sell .sell-product-section-title{flex-direction:column;align-items:flex-start;gap:2px}}

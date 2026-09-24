@@ -210,7 +210,7 @@ function renderShell() {
                 <thead>
                   <tr>
                     <th>Réf.</th><th>Produit</th><th>Catégorie</th><th>Sous-famille</th><th>Stock</th>
-                    <th>Achat HT</th><th>Tarifs</th><th>Cadeau</th><th>Statut</th>
+                    <th>Achat HT</th><th>Tarifs</th><th>Cadeau</th><th>Statut</th><th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="productRows"></tbody>
@@ -368,7 +368,8 @@ function renderShell() {
                 <h2>Espèces</h2>
                 <div class="small">Sélectionne les encaissements à conserver physiquement ou à regrouper dans une remise bancaire.</div>
               </div>
-              <div class="row">
+              <div class="row remittance-header-actions">
+                <button id="cashUnassignedFilterBtn" class="secondary remittance-filter active" type="button">Non affectées uniquement</button>
                 <button id="toggleAllCashBtn" class="secondary">Tout cocher</button>
                 <button id="suggestCashDepositBtn" class="secondary">Proposer une remise</button>
               </div>
@@ -396,7 +397,10 @@ function renderShell() {
                 <h2>Chèques</h2>
                 <div class="small">Regroupe les chèques en remise puis renseigne leur dépôt et leur crédit sur le compte.</div>
               </div>
-              <button id="toggleAllChequeBtn" class="secondary">Tout cocher</button>
+              <div class="row remittance-header-actions">
+                <button id="chequeUnassignedFilterBtn" class="secondary remittance-filter active" type="button">Non affectés uniquement</button>
+                <button id="toggleAllChequeBtn" class="secondary">Tout cocher</button>
+              </div>
             </div>
             <div class="table-wrap">
               <table>
@@ -838,7 +842,7 @@ function renderShell() {
 
     <dialog id="productDialog">
       <form method="dialog" class="card dialog-card product-dialog-card">
-        <h2>Nouveau produit</h2>
+        <h2 id="productDialogTitle">Nouveau produit</h2>
 
         <label class="small">Nom</label>
         <input id="pName" class="field" placeholder="Ex. Gingembre moulu">
@@ -905,7 +909,7 @@ function renderShell() {
 
     <dialog id="clientDialog">
       <form method="dialog" class="card dialog-card">
-        <h2>Nouveau client</h2>
+        <h2 id="clientDialogTitle">Nouveau client</h2>
         <input id="cName" class="field" placeholder="Nom">
         <input id="cPhone" class="field" placeholder="Téléphone" style="margin-top:8px">
         <input id="cEmail" class="field" type="email" placeholder="Email" style="margin-top:8px">
@@ -975,8 +979,8 @@ function bindEvents() {
   document.querySelector('#customerSearch').oninput = renderCustomerHints
   document.querySelector('#paymentFilter').onchange = renderPayments
 
-  document.querySelector('#addProductBtn').onclick = openProductDialog
-  document.querySelector('#addClientBtn').onclick = () => document.querySelector('#clientDialog').showModal()
+  document.querySelector('#addProductBtn').onclick = () => openProductDialog()
+  document.querySelector('#addClientBtn').onclick = () => openClientDialog()
   document.querySelector('#saveProductBtn').onclick = saveProduct
   document.querySelector('#pPricingMode').onchange = updateProductPricingForm
   document.querySelector('#saveClientBtn').onclick = saveCustomer
@@ -1061,6 +1065,8 @@ function bindEvents() {
     resetRemittanceRangeToMonth()
     renderRemittances()
   }
+  document.querySelector('#cashUnassignedFilterBtn').onclick = () => toggleRemittanceUnassignedFilter('cash')
+  document.querySelector('#chequeUnassignedFilterBtn').onclick = () => toggleRemittanceUnassignedFilter('cheque')
   document.querySelector('#toggleAllCashBtn').onclick = () => toggleAllRemittanceChecks('cash')
   document.querySelector('#toggleAllChequeBtn').onclick = () => toggleAllRemittanceChecks('cheque')
   document.querySelector('#cashFloatTarget').oninput = () => {
@@ -1323,25 +1329,62 @@ function renderTicketSummary() {
   }
 }
 
+function productPopularityMap() {
+  const completed = new Set(sales.filter(s => s.status === 'completed').map(s => s.id))
+  const saleSets = new Map()
+  for (const line of saleLines) {
+    if (!completed.has(line.sale_id)) continue
+    if (!saleSets.has(line.product_id)) saleSets.set(line.product_id,new Set())
+    saleSets.get(line.product_id).add(line.sale_id)
+  }
+  return new Map([...saleSets].map(([id,set]) => [id,set.size]))
+}
+
+function productCardHtml(p, isTop = false) {
+  return `
+    <button class="product-card ${isTop ? 'top-product' : ''}" data-id="${p.id}">
+      <div class="row space product-card-title">
+        <b>${esc(p.name)}</b>
+        ${isTop ? '<span class="top-product-badge">Top</span>' : ''}
+      </div>
+      <span>${productPriceSummary(p)}</span>
+      <small class="${num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
+        ${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}
+      </small>
+    </button>
+  `
+}
+
 function renderSellProducts() {
   const input = document.querySelector('#sellSearch')
   const container = document.querySelector('#sellProducts')
   if (!input || !container) return
 
   const query = input.value.toLowerCase().trim()
-  container.innerHTML = activeProducts()
+  const popularity = productPopularityMap()
+  const filtered = activeProducts()
     .filter(p => p.name.toLowerCase().includes(query) || String(p.sku || '').toLowerCase().includes(query))
-    .map(p => `
-      <button class="product-card" data-id="${p.id}">
-        <b>${esc(p.name)}</b>
-        <span>${productPriceSummary(p)}</span>
-        <small class="${num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
-          ${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}
-        </small>
-      </button>
-    `).join('')
+    .sort((a,b) => {
+      const diff = num(popularity.get(b.id)) - num(popularity.get(a.id))
+      return diff || a.name.localeCompare(b.name,'fr')
+    })
 
-  document.querySelectorAll('.product-card').forEach(btn => btn.onclick = () => addToCart(btn.dataset.id))
+  if (query) {
+    container.innerHTML = filtered.map(p => productCardHtml(p,false)).join('')
+  } else {
+    const top = filtered.slice(0,20)
+    const rest = filtered.slice(20)
+    container.innerHTML = `
+      <div class="sell-product-section-title">
+        <b>Les plus vendus</b>
+        <span class="small">Top ${Math.min(20,top.length)} selon les ventes enregistrées</span>
+      </div>
+      ${top.map(p => productCardHtml(p,true)).join('')}
+      ${rest.length ? `<div class="sell-product-section-title all-products"><b>Tous les autres produits</b></div>${rest.map(p => productCardHtml(p,false)).join('')}` : ''}
+    `
+  }
+
+  container.querySelectorAll('.product-card').forEach(btn => btn.onclick = () => addToCart(btn.dataset.id))
 }
 
 function addToCart(id) {
@@ -1584,9 +1627,12 @@ function renderProducts() {
         <td><span class="small">${productPriceSummary(p)}</span></td>
         <td>${boolLabel(p.loyalty_eligible)}</td>
         <td><span class="status ${p.active ? 'ok' : 'off'}">${p.active ? 'Actif' : 'Inactif'}</span></td>
+        <td><button class="secondary edit-product" data-id="${p.id}">Modifier</button></td>
       </tr>
     `
   }).join('')
+
+  body.querySelectorAll('.edit-product').forEach(btn => btn.onclick = () => openProductDialog(btn.dataset.id))
 }
 
 function loyaltyInfo(customerId) {
@@ -1619,7 +1665,9 @@ function renderCustomers() {
 
   body.innerHTML = customers.filter(c =>
     c.display_name.toLowerCase().includes(query) ||
-    String(c.customer_code || '').toLowerCase().includes(query)
+    String(c.customer_code || '').toLowerCase().includes(query) ||
+    String(c.phone || '').toLowerCase().includes(query) ||
+    String(c.email || '').toLowerCase().includes(query)
   ).map(c => {
     const info = loyaltyInfo(c.id)
     return `
@@ -1638,7 +1686,8 @@ function renderCustomers() {
         <td>${fmtDate(info.lastVisit)}</td>
         <td><span class="status ${c.active ? 'ok' : 'off'}">${c.active ? 'Actif' : 'Inactif'}</span></td>
         <td>
-          <div class="row">
+          <div class="row client-actions">
+            <button class="secondary edit-client" data-id="${c.id}">Modifier</button>
             <button class="secondary reward-btn" data-id="${c.id}" ${info.availableRewards < 1 || !c.active ? 'disabled' : ''}>Cadeau</button>
             <button class="secondary toggle-client" data-id="${c.id}" data-active="${c.active}">
               ${c.active ? 'Désactiver' : 'Réactiver'}
@@ -1649,8 +1698,9 @@ function renderCustomers() {
     `
   }).join('')
 
-  document.querySelectorAll('.reward-btn').forEach(btn => btn.onclick = () => openRewardDialog(btn.dataset.id))
-  document.querySelectorAll('.toggle-client').forEach(btn => btn.onclick = () => toggleClient(btn.dataset.id, btn.dataset.active === 'true'))
+  body.querySelectorAll('.edit-client').forEach(btn => btn.onclick = () => openClientDialog(btn.dataset.id))
+  body.querySelectorAll('.reward-btn').forEach(btn => btn.onclick = () => openRewardDialog(btn.dataset.id))
+  body.querySelectorAll('.toggle-client').forEach(btn => btn.onclick = () => toggleClient(btn.dataset.id, btn.dataset.active === 'true'))
 }
 
 async function toggleClient(id, currentlyActive) {
@@ -1856,9 +1906,14 @@ function updateProductPricingForm() {
   if (!fixed && document.querySelector('#pSell')) document.querySelector('#pSell').value = ''
 }
 
-function openProductDialog() {
+function openProductDialog(productId = null) {
+  const dialog = document.querySelector('#productDialog')
+  const product = productId ? products.find(p => p.id === productId) : null
+  dialog.dataset.editId = product?.id || ''
+  document.querySelector('#productDialogTitle').textContent = product ? 'Modifier le produit' : 'Nouveau produit'
+
   document.querySelector('#pCategory').innerHTML = categories
-    .filter(c => c.active)
+    .filter(c => c.active || c.id === product?.category_id)
     .map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
 
   ;['pName','pSubfamily','pStock','pThreshold','pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200']
@@ -1866,16 +1921,36 @@ function openProductDialog() {
       const el = document.querySelector('#'+id)
       if (el) el.value = ''
     })
-  document.querySelector('#pPricingMode').value = 'tiered_weight'
+
+  if (product) {
+    document.querySelector('#pName').value = product.name || ''
+    document.querySelector('#pCategory').value = product.category_id || ''
+    document.querySelector('#pSubfamily').value = product.subfamily || ''
+    document.querySelector('#pPricingMode').value = product.pricing_mode || 'tiered_weight'
+    document.querySelector('#pStock').value = num(product.stock_quantity)
+    document.querySelector('#pThreshold').value = num(product.stock_alert_threshold)
+    document.querySelector('#pBuy').value = num(product.purchase_price_ht) || ''
+    if (product.pricing_mode === 'fixed_unit') document.querySelector('#pSell').value = num(product.sale_price_ht) || ''
+
+    for (const tier of tiersForProduct(product.id)) {
+      const el = document.querySelector('#pPrice'+Math.round(num(tier.quantity)))
+      if (el) el.value = num(tier.price_ht) || ''
+    }
+  } else {
+    document.querySelector('#pPricingMode').value = 'tiered_weight'
+  }
+
   document.querySelector('#productMsg').textContent = ''
   updateProductPricingForm()
-  document.querySelector('#productDialog').showModal()
+  dialog.showModal()
 }
 
 async function saveProduct() {
+  const dialog = document.querySelector('#productDialog')
   const msg = document.querySelector('#productMsg')
   msg.textContent = ''
 
+  const editId = dialog.dataset.editId || null
   const pricingMode = document.querySelector('#pPricingMode').value
   const stockUnit = pricingMode === 'tiered_weight' ? 'g' : 'unit'
   const tiers = [
@@ -1905,38 +1980,68 @@ async function saveProduct() {
       : Number(document.querySelector('#pSell').value || 0),
     sale_price_basis: pricingMode === 'tiered_weight'
       ? num(fallback?.quantity || 100)
-      : 1
+      : 1,
+    updated_at: new Date().toISOString()
   }
 
   if (!payload.name) return msg.textContent = 'Nom obligatoire.'
   if (pricingMode === 'tiered_weight' && !tiers.length) return msg.textContent = 'Ajoute au moins un prix par palier.'
 
-  const { data:created, error } = await supabase.from('products').insert(payload).select('id').single()
-  if (error) return msg.textContent = error.message
+  try {
+    let productId = editId
+    if (editId) {
+      const { error } = await supabase.from('products').update(payload).eq('id', editId)
+      if (error) throw error
+    } else {
+      delete payload.updated_at
+      const { data:created, error } = await supabase.from('products').insert(payload).select('id').single()
+      if (error) throw error
+      productId = created.id
+    }
 
-  if (tiers.length) await syncProductTiers(created.id, tiers)
+    await syncProductTiers(productId, pricingMode === 'tiered_weight' ? tiers : [])
+    dialog.close()
+    await loadData()
+  } catch (error) {
+    msg.textContent = 'Erreur : ' + error.message
+  }
+}
 
-  document.querySelector('#productDialog').close()
-  await loadData()
+function openClientDialog(customerId = null) {
+  const dialog = document.querySelector('#clientDialog')
+  const customer = customerId ? customers.find(c => c.id === customerId) : null
+  dialog.dataset.editId = customer?.id || ''
+  document.querySelector('#clientDialogTitle').textContent = customer ? 'Modifier le client' : 'Nouveau client'
+  document.querySelector('#cName').value = customer?.display_name || ''
+  document.querySelector('#cPhone').value = customer?.phone || ''
+  document.querySelector('#cEmail').value = customer?.email || ''
+  document.querySelector('#clientMsg').textContent = ''
+  dialog.showModal()
 }
 
 async function saveCustomer() {
+  const dialog = document.querySelector('#clientDialog')
   const msg = document.querySelector('#clientMsg')
   msg.textContent = ''
 
+  const editId = dialog.dataset.editId || null
   const name = document.querySelector('#cName').value.trim()
   if (!name) return msg.textContent = 'Nom obligatoire.'
 
-  const { error } = await supabase.from('customers').insert({
-    organization_id: organizationId,
+  const payload = {
     display_name: name,
     phone: document.querySelector('#cPhone').value.trim() || null,
-    email: document.querySelector('#cEmail').value.trim() || null
-  })
+    email: document.querySelector('#cEmail').value.trim() || null,
+    updated_at: new Date().toISOString()
+  }
 
-  if (error) return msg.textContent = error.message
+  const result = editId
+    ? await supabase.from('customers').update(payload).eq('id',editId)
+    : await supabase.from('customers').insert({ organization_id:organizationId, ...payload })
 
-  document.querySelector('#clientDialog').close()
+  if (result.error) return msg.textContent = result.error.message
+
+  dialog.close()
   await loadData()
 }
 
@@ -2145,7 +2250,7 @@ function renderBackupPanel() {
   const techRows = document.querySelector('#backupTechRows')
   if (techRows) {
     techRows.innerHTML = `
-      <tr><td>Version application</td><td>Sprint 6C.3</td></tr>
+      <tr><td>Version application</td><td>Sprint 6D — ergonomie marché</td></tr>
       <tr><td>Organisation</td><td>${esc(organizationId || '—')}</td></tr>
       <tr><td>Snapshot hors ligne</td><td>${offlineSnapshot?.saved_at ? fmtDateTime(offlineSnapshot.saved_at) : 'Non disponible'}</td></tr>
       <tr><td>Produits mémorisés</td><td>${offlineSnapshot?.products?.length ?? products.length}</td></tr>
@@ -2852,11 +2957,31 @@ function remittancePaymentRows(method, period) {
     .sort((a,b) => new Date(a.paid_at || saleById(a.sale_id)?.sold_at) - new Date(b.paid_at || saleById(b.sale_id)?.sold_at))
 }
 
+function remittanceUnassignedOnly(method) {
+  const btn = document.querySelector(method === 'cash' ? '#cashUnassignedFilterBtn' : '#chequeUnassignedFilterBtn')
+  return btn?.classList.contains('active') ?? true
+}
+
+function toggleRemittanceUnassignedFilter(method) {
+  const btn = document.querySelector(method === 'cash' ? '#cashUnassignedFilterBtn' : '#chequeUnassignedFilterBtn')
+  if (!btn) return
+  btn.classList.toggle('active')
+  const active = btn.classList.contains('active')
+  btn.textContent = active
+    ? (method === 'cash' ? 'Non affectées uniquement' : 'Non affectés uniquement')
+    : 'Afficher tout'
+  renderRemittances()
+}
+
 function renderRemittancePaymentTable(method, rows, bodyId) {
   const body = document.querySelector('#'+bodyId)
   if (!body) return
 
-  body.innerHTML = rows.map(payment => {
+  const visibleRows = remittanceUnassignedOnly(method)
+    ? rows.filter(payment => !remittanceForPayment(payment.id))
+    : rows
+
+  body.innerHTML = visibleRows.map(payment => {
     const sale = saleById(payment.sale_id)
     const assignment = remittanceForPayment(payment.id)
     const batch = assignment?.batch
@@ -2871,7 +2996,7 @@ function renderRemittancePaymentTable(method, rows, bodyId) {
       <td>${eur(payment.amount)}</td>
       <td><span class="status ${batch ? 'ok' : 'off'}">${label}</span></td>
     </tr>`
-  }).join('') || '<tr><td colspan="5" class="muted">Aucun paiement sur cette période.</td></tr>'
+  }).join('') || `<tr><td colspan="5" class="muted">${remittanceUnassignedOnly(method) ? 'Aucun paiement non affecté sur cette période.' : 'Aucun paiement sur cette période.'}</td></tr>`
 
   body.querySelectorAll('.remittance-check').forEach(box => box.onchange = () => {
     updateRemittanceSelectionTotals()
@@ -3005,13 +3130,20 @@ function renderRemittances() {
   const targetMode = settings.cash_float_target_mode || 'amount'
   const targetPercent = num(settings.cash_float_target_percent)
 
+  const caisseBanc = cashRows.reduce((sum,p) => {
+    const a = remittanceForPayment(p.id)
+    return a?.batch && /^CAISSE\s+N\d{4}/i.test(String(a.batch.remittance_number || '').trim())
+      ? sum + num(p.amount)
+      : sum
+  },0)
+  const caisseBancShare = cashTotal ? caisseBanc / cashTotal * 100 : 0
+  const reserveShare = cashTotal ? currentReserve / cashTotal * 100 : 0
+
   document.querySelector('#remittanceKpis').innerHTML = `
-    <div class="card kpi"><div class="muted">CA encaissé période</div><div class="kpi-value">${eur(totalCa)}</div></div>
     <div class="card kpi"><div class="muted">Espèces encaissées</div><div class="kpi-value">${eur(cashTotal)}</div><div class="small">${cashShare.toFixed(1)} % du CA de la période</div></div>
-    <div class="card kpi"><div class="muted">Espèces en remises</div><div class="kpi-value">${eur(bankedCash)}</div></div>
-    <div class="card kpi"><div class="muted">Fonds de caisse actuel</div><div class="kpi-value">${eur(currentReserve)}</div><div class="small">Cible : ${eur0(target)}${targetMode==='percent' ? ' · '+targetPercent.toFixed(0)+' % des espèces' : ''}</div></div>
-    <div class="card kpi"><div class="muted">Espèces à affecter</div><div class="kpi-value">${eur(unassignedCash)}</div></div>
-    <div class="card kpi"><div class="muted">Chèques à affecter</div><div class="kpi-value">${eur(unassignedCheques)}</div><div class="small">Total chèques période : ${eur(chequeTotal)}</div></div>
+    <div class="card kpi"><div class="muted">Caisse banc</div><div class="kpi-value">${eur(caisseBanc)}</div><div class="small">${caisseBancShare.toFixed(1)} % des espèces</div></div>
+    <div class="card kpi"><div class="muted">Fonds de caisse actuel</div><div class="kpi-value">${eur(currentReserve)}</div><div class="small">${reserveShare.toFixed(1)} % des espèces · cible ${eur0(target)}</div></div>
+    <div class="card kpi"><div class="muted">À affecter</div><div class="kpi-value">${eur(unassignedCash)}</div><div class="small">Espèces · chèques ${eur(unassignedCheques)}</div></div>
   `
   const reserveNeeded = Math.max(0,target-currentReserve)
   const suggestedDeposit = Math.round(Math.max(0,unassignedCash-reserveNeeded))
