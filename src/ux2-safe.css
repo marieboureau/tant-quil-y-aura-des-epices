@@ -53,3 +53,54 @@
     font-size:11px;
   }
 }
+
+
+/* Sprint 6C — Pilotage mensuel consolidé */
+.ux2-swatch.prior{
+  background:#c9c6c0;
+}
+.ux2-svg-prior{
+  fill:#c9c6c0;
+}
+.chart-prior-label{
+  font-size:10px;
+  font-weight:700;
+  fill:#6f6a63;
+}
+#pilotage .remittance-status-kpi,
+#pilotage .comparison-kpi{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+}
+#pilotage .kpi-mini-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  font-size:13px;
+}
+#pilotage .positive{
+  color:#476c3f;
+}
+#pilotage .negative{
+  color:#9a4b43;
+}
+#pilotage .pilotage-top-actions{
+  display:flex;
+  align-items:end;
+  gap:8px;
+}
+#pilotage .pilotage-top-actions .field{
+  min-width:170px;
+}
+@media(max-width:900px){
+  #pilotage .pilotage-top-actions{
+    width:100%;
+    justify-content:flex-start;
+    flex-wrap:wrap;
+  }
+  #pilotage .pilotage-top-actions > div{
+    min-width:170px;
+  }
+}
