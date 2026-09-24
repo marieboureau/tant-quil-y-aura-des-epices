@@ -383,7 +383,7 @@ function renderStackedChart(monthly,prior,year,priorYear){
   const title=card?.querySelector('h2')
   const note=card?.querySelector('.small')
   if(title)title.textContent=`CA mensuel ${year} vs ${priorYear}`
-  if(note)note.textContent=`${year} détaillé par mode de paiement · ${priorYear} en gris sans ventilation · étiquette = CA total mensuel.`
+  if(note)note.textContent=`${year} détaillé par mode de paiement · ${priorYear} en gris sans ventilation · étiquette = CA total mensuel. Les très petits CA sont légèrement épaissis pour rester visibles.`
 
   const W=1160,H=380,pad={l:30,r:25,t:58,b:50},iw=W-pad.l-pad.r,ih=H-pad.t-pad.b
   const max=Math.max(1,...monthly.map(m=>m.ca),...prior.map(m=>m.ca))
@@ -399,19 +399,24 @@ function renderStackedChart(monthly,prior,year,priorYear){
     const cashOutside=Math.max(0,num(m.cash)-cashBank)
     const currentTotal=num(m.card)+num(m.cheque)+cashOutside+cashBank
     const priorTotal=num(prior[i]?.ca)
+    const baseline=pad.t+ih
+    const actualCurrentHeight=currentTotal ? baseline-y(currentTotal) : 0
+    const displayCurrentHeight=currentTotal ? Math.max(actualCurrentHeight,12) : 0
     let acc=0
 
     const seg=(value,cls)=>{
-      if(!value)return ''
-      const y0=y(acc)
+      if(!value || !currentTotal)return ''
+      const startRatio=acc/currentTotal
       acc+=value
-      const yt=y(acc),h=y0-yt
-      const pct=currentTotal?value/currentTotal*100:0
-      return `<rect x="${currentX(i)-currentBw/2}" y="${yt}" width="${currentBw}" height="${h}" class="ux2-svg-${cls}"></rect>${h>18?`<text x="${currentX(i)}" y="${yt+h/2+4}" text-anchor="middle" class="ux2-pct">${pct.toFixed(0)}%</text>`:''}`
+      const endRatio=acc/currentTotal
+      const yt=baseline-displayCurrentHeight*endRatio
+      const h=displayCurrentHeight*(endRatio-startRatio)
+      const pct=value/currentTotal*100
+      return `<rect x="${currentX(i)-currentBw/2}" y="${yt}" width="${currentBw}" height="${Math.max(h,1)}" class="ux2-svg-${cls}"></rect>${h>18?`<text x="${currentX(i)}" y="${yt+h/2+4}" text-anchor="middle" class="ux2-pct">${pct.toFixed(0)}%</text>`:''}`
     }
 
     const currentLabel=currentTotal
-      ? `<text x="${currentX(i)}" y="${Math.max(18,y(currentTotal)-8)}" text-anchor="middle" class="chart-ca-label">${Math.round(currentTotal).toLocaleString('fr-FR')} €</text>`
+      ? `<text x="${currentX(i)}" y="${Math.max(18,baseline-displayCurrentHeight-8)}" text-anchor="middle" class="chart-ca-label">${Math.round(currentTotal).toLocaleString('fr-FR')} €</text>`
       : ''
     const priorLabel=priorTotal
       ? `<text x="${priorX(i)}" y="${Math.max(18,y(priorTotal)-8)}" text-anchor="middle" class="chart-prior-label">${Math.round(priorTotal).toLocaleString('fr-FR')} €</text>`
