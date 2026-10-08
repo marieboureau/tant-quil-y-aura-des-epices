@@ -50,6 +50,39 @@ const searchable = value => String(value ?? '').normalize('NFD').replace(/[\u030
 const matchesSearch = (value, query) =>
   searchable(query).split(' ').filter(Boolean).every(token => searchable(value).includes(token))
 
+// Sous-familles contrôlées : plus de saisie libre (et conservation des valeurs historiques à corriger).
+const SUBFAMILIES = {
+  'Cafés': ['Cafés'],
+  'Thés': ['Thé noir','Thé vert','Thé blanc','Thé blanc / vert','Thé noir / Pu-Erh','Maté','Thé','Épices / aromates'],
+  'Tisanes & rooibos': ['Tisane','Rooibos','Eau de fruits','Fleurs / infusion','Infusion / Lapacho'],
+  'Épices': ['Épices','Épices / baies','Baies','Curry','Poivres','Piments','Sels','Vanille','Épices conditionnées',"Mélanges d'épices",'Mélanges culinaires','Mélanges de poivres'],
+  'Herbes & graines': ['Herbes','Graines','Épices / graines'],
+  'Sucres': ['Sucres'],
+  'Accessoires': ['Accessoires']
+}
+
+function renderSubfamilyChoices(selected = '') {
+  const select = document.querySelector('#pSubfamily')
+  const categoryId = document.querySelector('#pCategory')?.value
+  if (!select) return
+  const categoryName = categories.find(c => c.id === categoryId)?.name || ''
+  const choices = [...(SUBFAMILIES[categoryName] || [])]
+  if (selected && !choices.includes(selected)) choices.push(selected)
+  select.innerHTML = '<option value="">Choisir une sous-famille</option>' +
+    choices.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')
+  select.value = selected && choices.includes(selected) ? selected : ''
+}
+
+function categoryColorClass(p) {
+  if (p.stock_tracked === false) return 'category-houseblend'
+  const name = categories.find(c => c.id === p.category_id)?.name || ''
+  return ({
+    'Thés':'category-tea','Tisanes & rooibos':'category-infusion',
+    'Épices':'category-spice','Herbes & graines':'category-herbs',
+    'Cafés':'category-coffee','Sucres':'category-sugar','Accessoires':'category-accessory'
+  })[name] || ''
+}
+
 async function init() {
   let initialized = false
   supabase.auth.onAuthStateChange((event, newSession) => {
@@ -938,7 +971,7 @@ function renderShell() {
           </div>
           <div>
             <label class="small">Sous-famille</label>
-            <input id="pSubfamily" class="field" placeholder="Ex. Racines, Poivres, Thé noir">
+            <select id="pSubfamily" class="field"><option value="">Choisir une sous-famille</option></select>
           </div>
         </div>
 
@@ -950,7 +983,11 @@ function renderShell() {
         </select>
         <div id="productPricingHelp" class="notice product-pricing-help" style="margin-top:8px"></div>
 
-        <div class="grid product-form-grid" style="margin-top:10px">
+        <label class="house-blend-setting">
+          <input id="pStockTracked" type="checkbox" checked>
+          <span><b>Suivre le stock de ce produit</b><br><small>Décocher pour un mélange maison préparé sur le banc : vente possible, sans déduction de stock ni des ingrédients.</small></span>
+        </label>
+        <div id="trackedStockBlock" class="grid product-form-grid" style="margin-top:10px">
           <div>
             <label id="pStockLabel" class="small">Stock initial (g)</label>
             <input id="pStock" type="number" class="field" min="0" placeholder="Laisser vide si stock non compté">
@@ -1108,6 +1145,8 @@ function bindEvents() {
   document.querySelector('#addClientBtn').onclick = () => openClientDialog()
   document.querySelector('#saveProductBtn').onclick = saveProduct
   document.querySelector('#pPricingMode').onchange = updateProductPricingForm
+  document.querySelector('#pCategory').onchange = () => renderSubfamilyChoices()
+  document.querySelector('#pStockTracked').onchange = updateTrackedStockForm
   document.querySelector('#saveClientBtn').onclick = saveCustomer
   document.querySelector('#cName').oninput = renderClientDuplicateHint
   document.querySelector('#validateSale').onclick = completeSale
@@ -1495,17 +1534,17 @@ function productPopularityMap() {
 
 function productCardHtml(p, isTop = false) {
   const noTariff = p.pricing_mode === 'tiered_weight' && !tiersForProduct(p.id).length && !(num(p.sale_price_ht)>0)
-  const stockLabel = p.stock_pending
+  const stockLabel = p.stock_tracked === false ? 'Mélange maison · stock non suivi' : p.stock_pending
     ? 'Stock à saisir'
     : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
   return `
-    <button class="product-card ${isTop ? 'top-product' : ''} ${noTariff ? 'tariff-missing' : ''}" data-id="${p.id}">
+    <button class="product-card ${categoryColorClass(p)} ${isTop ? 'top-product' : ''} ${noTariff ? 'tariff-missing' : ''}" data-id="${p.id}">
       <div class="row space product-card-title">
         <b>${esc(p.name)}</b>
         ${isTop ? '<span class="top-product-badge">Top</span>' : ''}
       </div>
       <span>${productPriceSummary(p)}</span>
-      <small class="${!p.stock_pending && num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
+      <small class="${p.stock_tracked !== false && !p.stock_pending && num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
         ${stockLabel}
       </small>
     </button>
@@ -1680,7 +1719,7 @@ async function completeSale() {
   for (const item of cart) {
     const product = products.find(p => p.id === item.id)
     if (!product) return msg.textContent = 'Produit introuvable.'
-    if (item.qty > num(product.stock_quantity)) {
+    if (product.stock_tracked !== false && item.qty > num(product.stock_quantity)) {
       return msg.textContent = `Stock insuffisant pour ${product.name}.`
     }
   }
@@ -1779,7 +1818,8 @@ function renderProducts() {
     [p.name,p.sku,p.subfamily,p.preferred_supplier,p.supplier_reference].join(' '),query
   )).map(p => {
     const category = categories.find(c => c.id === p.category_id)?.name || '—'
-    const stock = p.stock_pending ? '<span class="muted">À saisir</span>' : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
+    const stock = p.stock_tracked === false ? '<span class="muted">Non suivi</span>' :
+      p.stock_pending ? '<span class="muted">À saisir</span>' : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
     return `
       <tr>
         <td>${esc(p.sku || '—')}</td>
@@ -2038,6 +2078,12 @@ async function confirmCancelSale() {
   await loadData()
 }
 
+function updateTrackedStockForm() {
+  const tracked = document.querySelector('#pStockTracked')?.checked !== false
+  const block = document.querySelector('#trackedStockBlock')
+  if (block) block.style.display = tracked ? '' : 'none'
+}
+
 function updateProductPricingForm() {
   const mode = document.querySelector('#pPricingMode')?.value || 'tiered_weight'
   const weighted = mode === 'tiered_weight'
@@ -2078,8 +2124,9 @@ function openProductDialog(productId = null) {
   document.querySelector('#pCategory').innerHTML = categories
     .filter(c => c.active || c.id === product?.category_id)
     .map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
+  document.querySelector('#pStockTracked').checked = product?.stock_tracked !== false
 
-  ;['pName','pSubfamily','pStock','pThreshold','pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef']
+  ;['pName','pStock','pThreshold','pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef']
     .forEach(id => {
       const el = document.querySelector('#'+id)
       if (el) el.value = ''
@@ -2089,7 +2136,7 @@ function openProductDialog(productId = null) {
   if (product) {
     document.querySelector('#pName').value = product.name || ''
     document.querySelector('#pCategory').value = product.category_id || ''
-    document.querySelector('#pSubfamily').value = product.subfamily || ''
+    renderSubfamilyChoices(product.subfamily || '')
     document.querySelector('#pPricingMode').value = product.pricing_mode || 'tiered_weight'
     document.querySelector('#pStock').value = product.stock_pending ? '' : num(product.stock_quantity)
     document.querySelector('#pThreshold').value = num(product.stock_alert_threshold)
@@ -2105,10 +2152,12 @@ function openProductDialog(productId = null) {
     }
   } else {
     document.querySelector('#pPricingMode').value = 'tiered_weight'
+    renderSubfamilyChoices()
   }
 
   document.querySelector('#productMsg').textContent = ''
   updateProductPricingForm()
+  updateTrackedStockForm()
   dialog.showModal()
 }
 
@@ -2137,7 +2186,8 @@ async function saveProduct() {
     organization_id: organizationId,
     name: document.querySelector('#pName').value.trim(),
     category_id: document.querySelector('#pCategory').value || null,
-    subfamily: document.querySelector('#pSubfamily').value.trim() || null,
+    subfamily: document.querySelector('#pSubfamily').value || null,
+    stock_tracked: document.querySelector('#pStockTracked').checked,
     pricing_mode: pricingMode,
     stock_unit: stockUnit,
     purchase_unit: stockUnit === 'g' ? 'sachet' : 'unité',
@@ -2161,6 +2211,7 @@ async function saveProduct() {
   }
 
   if (!payload.name) return msg.textContent = 'Nom obligatoire.'
+  if (!payload.subfamily) return msg.textContent = 'Choisis une sous-famille.'
 
   try {
     let productId = editId
@@ -2333,7 +2384,7 @@ function queueOfflineSale(payload) {
 function applyOfflineSaleLocally(payload) {
   for (const line of payload.lines) {
     const product = products.find(p => p.id === line.product_id)
-    if (product) product.stock_quantity = num(product.stock_quantity) - num(line.quantity)
+    if (product && product.stock_tracked !== false) product.stock_quantity = num(product.stock_quantity) - num(line.quantity)
   }
 
   if (payload.customer_id) {
