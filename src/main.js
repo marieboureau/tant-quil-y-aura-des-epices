@@ -2297,6 +2297,7 @@ async function saveProduct() {
     }
 
     await syncProductTiers(productId, pricingMode === 'tiered_weight' ? tiers : [])
+    sessionStorage.removeItem('epices_form_draft')
     dialog.close()
     await loadData()
   } catch (error) {
@@ -2358,6 +2359,7 @@ async function saveCustomer() {
   btn.disabled = false
   if (error) return msg.textContent = 'Erreur : ' + error.message
 
+  sessionStorage.removeItem('epices_form_draft')
   dialog.close()
   await loadData()
 }
