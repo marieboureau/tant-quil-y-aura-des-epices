@@ -31,6 +31,7 @@ let pendingBankImport = null
 let offlineSnapshot = null
 let offlineQueue = []
 let installPrompt = null
+let passwordRecoveryMode = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('type') === 'recovery'
 
 const eur = value => Number(value || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
 const eur0 = value => Math.round(Number(value || 0)).toLocaleString('fr-FR') + ' €'
@@ -44,17 +45,22 @@ const fmtDate = value => value ? new Date(value).toLocaleDateString('fr-FR') : '
 const boolLabel = value => value ? 'Oui' : 'Non'
 
 async function init() {
+  let initialized = false
+  supabase.auth.onAuthStateChange((event, newSession) => {
+    session = newSession
+    if (event === 'PASSWORD_RECOVERY') passwordRecoveryMode = true
+    if (event === 'SIGNED_OUT') passwordRecoveryMode = false
+    if (initialized) render()
+  })
+
   const { data } = await supabase.auth.getSession()
   session = data.session
+  initialized = true
   render()
-
-  supabase.auth.onAuthStateChange((_event, newSession) => {
-    session = newSession
-    render()
-  })
 }
 
 function render() {
+  if (passwordRecoveryMode) return renderPasswordRecovery()
   if (!session) return renderLogin()
   renderShell()
   loadData()
@@ -71,11 +77,77 @@ function renderLogin() {
         <label class="small" style="display:block;margin-top:10px">Mot de passe</label>
         <input id="password" class="field" type="password">
         <button id="loginBtn" class="primary" style="width:100%;margin-top:14px">Se connecter</button>
+        <button id="forgotPasswordBtn" class="secondary" style="width:100%;margin-top:10px">Mot de passe oublié ?</button>
         <div id="loginMsg" class="small" style="margin-top:10px"></div>
       </div>
     </div>
   `
   document.querySelector('#loginBtn').onclick = login
+  document.querySelector('#forgotPasswordBtn').onclick = requestPasswordReset
+}
+
+async function requestPasswordReset() {
+  const msg = document.querySelector('#loginMsg')
+  const email = document.querySelector('#email').value.trim()
+  if (!email) {
+    msg.textContent = 'Renseigne ton adresse e-mail avant de demander un lien.'
+    return
+  }
+  msg.textContent = 'Envoi du lien en cours…'
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/'
+  })
+  msg.textContent = error
+    ? 'Envoi impossible : ' + error.message
+    : 'Si un compte existe pour cette adresse, un lien de réinitialisation vient d’être envoyé.'
+}
+
+function renderPasswordRecovery() {
+  app.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card">
+        <h1>Définir un nouveau mot de passe</h1>
+        <p class="muted">Choisis le mot de passe de ton compte Tant qu’il y aura des Épices.</p>
+        <label class="small" for="newPassword">Nouveau mot de passe (10 caractères minimum)</label>
+        <input id="newPassword" class="field" type="password" autocomplete="new-password" minlength="10">
+        <label class="small" for="confirmPassword" style="display:block;margin-top:10px">Confirmer le nouveau mot de passe</label>
+        <input id="confirmPassword" class="field" type="password" autocomplete="new-password" minlength="10">
+        <button id="saveNewPasswordBtn" class="primary" style="width:100%;margin-top:14px">Enregistrer le mot de passe</button>
+        <div id="resetPasswordMsg" class="small" role="status" style="margin-top:10px"></div>
+      </div>
+    </div>
+  `
+  document.querySelector('#saveNewPasswordBtn').onclick = saveNewPassword
+}
+
+async function saveNewPassword() {
+  const msg = document.querySelector('#resetPasswordMsg')
+  const password = document.querySelector('#newPassword').value
+  const confirmation = document.querySelector('#confirmPassword').value
+  if (!session) {
+    msg.textContent = 'Ce lien est expiré ou invalide. Demande un nouveau lien de réinitialisation.'
+    return
+  }
+  if (password.length < 10) {
+    msg.textContent = 'Utilise au moins 10 caractères.'
+    return
+  }
+  if (password !== confirmation) {
+    msg.textContent = 'Les deux mots de passe sont différents.'
+    return
+  }
+  const btn = document.querySelector('#saveNewPasswordBtn')
+  btn.disabled = true
+  msg.textContent = 'Enregistrement du nouveau mot de passe…'
+  const { error } = await supabase.auth.updateUser({ password })
+  if (error) {
+    btn.disabled = false
+    msg.textContent = 'Échec : ' + error.message
+    return
+  }
+  passwordRecoveryMode = false
+  window.history.replaceState({}, '', window.location.pathname)
+  render()
 }
 
 async function login() {
