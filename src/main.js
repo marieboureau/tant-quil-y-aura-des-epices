@@ -1010,9 +1010,15 @@ function renderShell() {
     <dialog id="clientDialog">
       <form method="dialog" class="card dialog-card">
         <h2 id="clientDialogTitle">Nouveau client</h2>
-        <input id="cName" class="field" placeholder="Nom">
-        <input id="cPhone" class="field" placeholder="Téléphone" style="margin-top:8px">
-        <input id="cEmail" class="field" type="email" placeholder="Email" style="margin-top:8px">
+        <label class="small" for="cName">Nom et prénom</label>
+        <input id="cName" class="field" placeholder="NOM Prénom (2e prénom si homonyme)" autocomplete="off">
+        <div class="small" style="margin-top:4px">Format conseillé : NOM en majuscules, Prénom puis éventuel deuxième prénom.</div>
+        <div id="clientDuplicateWarning" class="notice" style="display:none;margin-top:6px" role="status"></div>
+        <label class="small" for="cVisits" style="display:block;margin-top:10px">Passages de fidélité enregistrés</label>
+        <input id="cVisits" class="field" type="number" min="0" max="1000000" step="1" value="0">
+        <div class="small" style="margin-top:4px">Correction possible à la hausse ou à la baisse ; modification tracée dans l'historique fidélité.</div>
+        <input id="cPhone" class="field" placeholder="Téléphone (facultatif)" style="margin-top:8px">
+        <input id="cEmail" class="field" type="email" placeholder="Email (facultatif)" style="margin-top:8px">
         <div class="row" style="justify-content:flex-end;margin-top:14px">
           <button value="cancel" class="secondary">Annuler</button>
           <button id="saveClientBtn" type="button" class="primary">Enregistrer</button>
@@ -1103,6 +1109,7 @@ function bindEvents() {
   document.querySelector('#saveProductBtn').onclick = saveProduct
   document.querySelector('#pPricingMode').onchange = updateProductPricingForm
   document.querySelector('#saveClientBtn').onclick = saveCustomer
+  document.querySelector('#cName').oninput = renderClientDuplicateHint
   document.querySelector('#validateSale').onclick = completeSale
   document.querySelector('#saveLoyaltyBtn').onclick = saveLoyaltySettings
 
@@ -2183,8 +2190,27 @@ function openClientDialog(customerId = null) {
   document.querySelector('#cName').value = customer?.display_name || ''
   document.querySelector('#cPhone').value = customer?.phone || ''
   document.querySelector('#cEmail').value = customer?.email || ''
+  document.querySelector('#cVisits').value = customer ? loyaltyInfo(customer.id).visits : 0
+  document.querySelector('#clientDuplicateWarning').style.display = 'none'
   document.querySelector('#clientMsg').textContent = ''
   dialog.showModal()
+}
+
+function renderClientDuplicateHint() {
+  const name = document.querySelector('#cName').value.trim()
+  const currentId = document.querySelector('#clientDialog').dataset.editId
+  const box = document.querySelector('#clientDuplicateWarning')
+  if (name.length < 3) {
+    box.style.display='none'
+    return
+  }
+  const matches = customers.filter(c => c.id !== currentId && matchesSearch(c.display_name,name)).slice(0,4)
+  box.style.display = matches.length ? 'block' : 'none'
+  if (matches.length) {
+    box.textContent = 'Client(s) similaire(s) déjà présent(s) : ' +
+      matches.map(c => c.display_name + (c.phone ? ' — ' + c.phone : '')).join(' ; ') +
+      '. Vérifie avant de créer un homonyme ; utilise un deuxième prénom ou le téléphone pour les distinguer.'
+  }
 }
 
 async function saveCustomer() {
@@ -2192,22 +2218,23 @@ async function saveCustomer() {
   const msg = document.querySelector('#clientMsg')
   msg.textContent = ''
 
-  const editId = dialog.dataset.editId || null
   const name = document.querySelector('#cName').value.trim()
-  if (!name) return msg.textContent = 'Nom obligatoire.'
-
-  const payload = {
-    display_name: name,
-    phone: document.querySelector('#cPhone').value.trim() || null,
-    email: document.querySelector('#cEmail').value.trim() || null,
-    updated_at: new Date().toISOString()
+  const rawVisits = document.querySelector('#cVisits').value.trim()
+  if (!name) return msg.textContent = 'Nom et prénom obligatoires.'
+  if (!/^\\d+$/.test(rawVisits) || Number(rawVisits) > 1000000) {
+    return msg.textContent = 'Nombre de passages entier et positif requis.'
   }
-
-  const result = editId
-    ? await supabase.from('customers').update(payload).eq('id',editId)
-    : await supabase.from('customers').insert({ organization_id:organizationId, ...payload })
-
-  if (result.error) return msg.textContent = result.error.message
+  const btn = document.querySelector('#saveClientBtn')
+  btn.disabled = true
+  const {error} = await supabase.rpc('save_customer_with_visits', {
+    p_customer_id: dialog.dataset.editId || null,
+    p_display_name: name,
+    p_phone: document.querySelector('#cPhone').value.trim(),
+    p_email: document.querySelector('#cEmail').value.trim(),
+    p_visits: Number(rawVisits)
+  })
+  btn.disabled = false
+  if (error) return msg.textContent = 'Erreur : ' + error.message
 
   dialog.close()
   await loadData()
