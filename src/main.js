@@ -43,14 +43,24 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
 const fmtDateTime = value => value ? new Date(value).toLocaleString('fr-FR') : '—'
 const fmtDate = value => value ? new Date(value).toLocaleDateString('fr-FR') : '—'
 const boolLabel = value => value ? 'Oui' : 'Non'
+const searchable = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toLocaleLowerCase('fr').replace(/œ/g,'oe').replace(/æ/g,'ae')
+  .replace(/[^a-z0-9]+/g,' ').trim()
+const matchesSearch = (value, query) =>
+  searchable(query).split(' ').filter(Boolean).every(token => searchable(value).includes(token))
 
 async function init() {
   let initialized = false
   supabase.auth.onAuthStateChange((event, newSession) => {
+    const previousUserId = session?.user?.id
     session = newSession
     if (event === 'PASSWORD_RECOVERY') passwordRecoveryMode = true
     if (event === 'SIGNED_OUT') passwordRecoveryMode = false
-    if (initialized) render()
+    if (!initialized) return
+    // Les rafraîchissements de session ne doivent pas fermer un formulaire en cours.
+    if (event === 'TOKEN_REFRESHED' ||
+        (event === 'SIGNED_IN' && previousUserId === newSession?.user?.id && !passwordRecoveryMode)) return
+    render()
   })
 
   const { data } = await supabase.auth.getSession()
@@ -193,7 +203,7 @@ function renderShell() {
 
           <div class="grid sell-layout">
             <div class="card">
-              <input id="sellSearch" class="field" placeholder="Rechercher un produit…">
+              <div class="search-wrap"><input id="sellSearch" class="field" placeholder="Rechercher un produit…"><button class="search-clear" type="button" data-clear="sellSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
               <div id="sellProducts" class="product-grid"></div>
             </div>
 
@@ -203,7 +213,7 @@ function renderShell() {
               <div id="cartEmpty" class="muted">Touchez un produit pour l’ajouter.</div>
 
               <label class="small">Client fidélité</label>
-              <input id="customerSearch" class="field" placeholder="Rechercher un client…">
+              <div class="search-wrap"><input id="customerSearch" class="field" placeholder="Rechercher un client…"><button class="search-clear" type="button" data-clear="customerSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
               <div id="customerHints"></div>
               <div id="selectedCustomer" class="notice" style="display:none;margin-top:8px"></div>
 
@@ -276,7 +286,7 @@ function renderShell() {
           </div>
 
           <div class="card">
-            <input id="productSearch" class="field" placeholder="Rechercher…" style="margin-bottom:10px">
+            <div class="search-wrap"><input id="productSearch" class="field" placeholder="Rechercher…" style="margin-bottom:10px"><button class="search-clear" type="button" data-clear="productSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -305,7 +315,7 @@ function renderShell() {
           </div>
 
           <div class="card">
-            <input id="clientSearch" class="field" placeholder="Rechercher…" style="margin-bottom:10px">
+            <div class="search-wrap"><input id="clientSearch" class="field" placeholder="Rechercher…" style="margin-bottom:10px"><button class="search-clear" type="button" data-clear="clientSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -1055,16 +1065,35 @@ function renderShell() {
   `
 
   bindEvents()
+  const rememberedTab = sessionStorage.getItem('epices_active_tab')
+  const rememberedButton = rememberedTab && document.querySelector('nav button[data-tab="' + rememberedTab + '"]')
+  if (rememberedButton && rememberedTab !== 'sell') switchTab(rememberedButton)
 }
 
 function bindEvents() {
-  document.querySelector('#logoutBtn').onclick = () => supabase.auth.signOut()
+  document.querySelector('#logoutBtn').onclick = () => {
+    sessionStorage.removeItem('epices_active_tab')
+    supabase.auth.signOut()
+  }
   document.querySelectorAll('nav button').forEach(btn => btn.onclick = () => switchTab(btn))
 
   document.querySelector('#sellSearch').oninput = renderSellProducts
   document.querySelector('#productSearch').oninput = renderProducts
   document.querySelector('#clientSearch').oninput = renderCustomers
-  document.querySelector('#customerSearch').oninput = renderCustomerHints
+  document.querySelector('#customerSearch').oninput = () => {
+    selectedCustomer = null
+    document.querySelector('#selectedCustomer').style.display = 'none'
+    renderCustomerHints()
+  }
+  document.querySelectorAll('.search-clear').forEach(button => {
+    button.onclick = () => {
+      const input = document.querySelector('#' + button.dataset.clear)
+      if (!input) return
+      input.value = ''
+      input.dispatchEvent(new Event('input', { bubbles:true }))
+      input.focus()
+    }
+  })
   document.querySelector('#paymentFilter').onchange = renderPayments
 
   document.querySelector('#addProductBtn').onclick = () => openProductDialog()
@@ -1198,6 +1227,7 @@ function switchTab(btn) {
   btn.classList.add('active')
   document.querySelectorAll('.section').forEach(x => x.classList.remove('active'))
   const tab = btn.dataset.tab
+  sessionStorage.setItem('epices_active_tab', tab)
   document.querySelector('#' + tab).classList.add('active')
 
   // Rendu à l'ouverture : évite un écran vide si un autre panneau a rencontré une erreur auparavant.
@@ -1454,10 +1484,10 @@ function renderSellProducts() {
   const container = document.querySelector('#sellProducts')
   if (!input || !container) return
 
-  const query = input.value.toLowerCase().trim()
+  const query = input.value.trim()
   const popularity = productPopularityMap()
   const filtered = activeProducts()
-    .filter(p => p.name.toLowerCase().includes(query) || String(p.sku || '').toLowerCase().includes(query))
+    .filter(p => matchesSearch([p.name,p.sku,p.subfamily].join(' '),query))
     .sort((a,b) => {
       const featured = Number(!!b.top20_hint)-Number(!!a.top20_hint)
       if (featured) return featured
@@ -1584,12 +1614,10 @@ function renderCustomerHints() {
   const container = document.querySelector('#customerHints')
   if (!input || !container) return
 
-  const query = input.value.toLowerCase().trim()
+  const query = input.value.trim()
   container.innerHTML = query
-    ? customers.filter(c => c.active && (
-        c.display_name.toLowerCase().includes(query) ||
-        String(c.customer_code || '').toLowerCase().includes(query)
-      )).slice(0, 8).map(c =>
+    ? customers.filter(c => c.active &&
+        matchesSearch([c.display_name,c.customer_code,c.phone,c.email].join(' '),query)).slice(0, 8).map(c =>
         `<button class="hint" data-id="${c.id}">${esc(c.display_name)} <span class="muted">${esc(c.customer_code || '')}</span></button>`
       ).join('')
     : ''
@@ -1713,14 +1741,10 @@ function renderProducts() {
   const body = document.querySelector('#productRows')
   if (!input || !body) return
 
-  const query = input.value.toLowerCase().trim()
-  body.innerHTML = products.filter(p =>
-    p.name.toLowerCase().includes(query) ||
-    String(p.sku || '').toLowerCase().includes(query) ||
-    String(p.subfamily || '').toLowerCase().includes(query) ||
-    String(p.preferred_supplier || '').toLowerCase().includes(query) ||
-    String(p.supplier_reference || '').toLowerCase().includes(query)
-  ).map(p => {
+  const query = input.value.trim()
+  body.innerHTML = products.filter(p => matchesSearch(
+    [p.name,p.sku,p.subfamily,p.preferred_supplier,p.supplier_reference].join(' '),query
+  )).map(p => {
     const category = categories.find(c => c.id === p.category_id)?.name || '—'
     const stock = p.stock_pending ? '<span class="muted">À saisir</span>' : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
     return `
@@ -1770,14 +1794,11 @@ function renderCustomers() {
   const body = document.querySelector('#clientRows')
   if (!input || !body) return
 
-  const query = input.value.toLowerCase().trim()
+  const query = input.value.trim()
 
-  body.innerHTML = customers.filter(c =>
-    c.display_name.toLowerCase().includes(query) ||
-    String(c.customer_code || '').toLowerCase().includes(query) ||
-    String(c.phone || '').toLowerCase().includes(query) ||
-    String(c.email || '').toLowerCase().includes(query)
-  ).map(c => {
+  body.innerHTML = customers.filter(c => matchesSearch(
+    [c.display_name,c.customer_code,c.phone,c.email].join(' '),query
+  )).map(c => {
     const info = loyaltyInfo(c.id)
     return `
       <tr>
