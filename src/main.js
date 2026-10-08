@@ -2838,11 +2838,16 @@ async function applyImport() {
         pending_rewards:item._pendingRewards || 0,
         historical_rewards_used:item._historicalRewardsUsed || 0
       }))
-      const {error}=await supabase.rpc('import_clients_with_loyalty_v2',{
-        p_rows:payload,
-        p_source_label:'08/10/2026'
-      })
-      if(error) throw error
+      const batchSize=100
+      for(let offset=0;offset<payload.length;offset+=batchSize) {
+        const batch=payload.slice(offset,offset+batchSize)
+        msg.textContent=`Import clients : ${offset + 1} à ${Math.min(offset+batch.length,payload.length)} sur ${payload.length}…`
+        const {error}=await supabase.rpc('import_clients_with_loyalty_v2',{
+          p_rows:batch,
+          p_source_label:'08/10/2026'
+        })
+        if(error) throw new Error(`Lot ${Math.floor(offset/batchSize)+1} : ${error.message}`)
+      }
     }
 
     document.querySelector('#importDialog').close()
