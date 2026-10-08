@@ -210,7 +210,7 @@ function renderShell() {
                 <thead>
                   <tr>
                     <th>Réf.</th><th>Produit</th><th>Catégorie</th><th>Sous-famille</th><th>Stock</th>
-                    <th>Achat HT</th><th>Tarifs</th><th>Cadeau</th><th>Statut</th><th>Actions</th>
+                    <th>Fournisseur</th><th>Réf. fournisseur</th><th>Achat HT</th><th>Tarifs</th><th>Cadeau</th><th>Statut</th><th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="productRows"></tbody>
@@ -869,7 +869,8 @@ function renderShell() {
         <div class="grid product-form-grid" style="margin-top:10px">
           <div>
             <label id="pStockLabel" class="small">Stock initial (g)</label>
-            <input id="pStock" type="number" class="field" min="0" placeholder="Ex. 1000">
+            <input id="pStock" type="number" class="field" min="0" placeholder="Laisser vide si stock non compté">
+            <div class="small">Vide = stock à saisir plus tard.</div>
           </div>
           <div>
             <label id="pThresholdLabel" class="small">Alerte stock (g)</label>
@@ -882,6 +883,21 @@ function renderShell() {
           <input id="pBuy" type="number" min="0" step="0.01" class="field" placeholder="Ex. 3,20">
           <div id="pBuyHelp" class="small">Utilisé uniquement pour calculer la marge. Laisser à 0 si le coût n’est pas encore connu.</div>
         </div>
+
+        <div class="grid product-form-grid" style="margin-top:10px">
+          <div>
+            <label class="small">Fournisseur privilégié</label>
+            <input id="pSupplier" class="field" placeholder="Ex. Cailleau Herboristerie">
+          </div>
+          <div>
+            <label class="small">Référence fournisseur</label>
+            <input id="pSupplierRef" class="field" placeholder="Ex. CAM11">
+          </div>
+        </div>
+        <label class="row small" style="margin-top:10px;gap:8px">
+          <input id="pTop20" type="checkbox">
+          Produit prioritaire / Top 20
+        </label>
 
         <div id="fixedPriceBlock" style="display:none;margin-top:10px">
           <label class="small">Prix de vente par unité</label>
@@ -1224,7 +1240,9 @@ function productPriceSummary(product) {
   if (product.pricing_mode === 'free_unit') return 'Prix libre / unité'
   if (product.pricing_mode === 'fixed_unit') return `${eur(product.sale_price_ht)} / unité`
   const tiers = tiersForProduct(product.id)
-  if (!tiers.length) return `${eur(product.sale_price_ht)} / ${num(product.sale_price_basis) || 100} ${esc(product.stock_unit)}`
+  if (!tiers.length) return num(product.sale_price_ht) > 0
+    ? `${eur(product.sale_price_ht)} / ${num(product.sale_price_basis) || 100} ${esc(product.stock_unit)}`
+    : 'Tarif à compléter'
   return tiers.map(t => `${num(t.quantity)} g : ${eur(t.price_ht)}`).join(' · ')
 }
 
@@ -1341,15 +1359,19 @@ function productPopularityMap() {
 }
 
 function productCardHtml(p, isTop = false) {
+  const noTariff = p.pricing_mode === 'tiered_weight' && !tiersForProduct(p.id).length && !(num(p.sale_price_ht)>0)
+  const stockLabel = p.stock_pending
+    ? 'Stock à saisir'
+    : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
   return `
-    <button class="product-card ${isTop ? 'top-product' : ''}" data-id="${p.id}">
+    <button class="product-card ${isTop ? 'top-product' : ''} ${noTariff ? 'tariff-missing' : ''}" data-id="${p.id}">
       <div class="row space product-card-title">
         <b>${esc(p.name)}</b>
         ${isTop ? '<span class="top-product-badge">Top</span>' : ''}
       </div>
       <span>${productPriceSummary(p)}</span>
-      <small class="${num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
-        ${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}
+      <small class="${!p.stock_pending && num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
+        ${stockLabel}
       </small>
     </button>
   `
@@ -1365,19 +1387,25 @@ function renderSellProducts() {
   const filtered = activeProducts()
     .filter(p => p.name.toLowerCase().includes(query) || String(p.sku || '').toLowerCase().includes(query))
     .sort((a,b) => {
+      const featured = Number(!!b.top20_hint)-Number(!!a.top20_hint)
+      if (featured) return featured
       const diff = num(popularity.get(b.id)) - num(popularity.get(a.id))
       return diff || a.name.localeCompare(b.name,'fr')
     })
 
   if (query) {
-    container.innerHTML = filtered.map(p => productCardHtml(p,false)).join('')
+    container.innerHTML = filtered.map(p => productCardHtml(p,!!p.top20_hint)).join('')
   } else {
-    const top = filtered.slice(0,20)
-    const rest = filtered.slice(20)
+    const featured=filtered.filter(p=>p.top20_hint).slice(0,20)
+    const featuredIds=new Set(featured.map(p=>p.id))
+    const fill=filtered.filter(p=>!featuredIds.has(p.id)).slice(0,Math.max(0,20-featured.length))
+    const top=[...featured,...fill]
+    const topIds=new Set(top.map(p=>p.id))
+    const rest=filtered.filter(p=>!topIds.has(p.id))
     container.innerHTML = `
       <div class="sell-product-section-title">
         <b>Les plus vendus</b>
-        <span class="small">Top ${Math.min(20,top.length)} selon les ventes enregistrées</span>
+        <span class="small">Top 20 préparé avec Benoît, puis enrichi par les ventes enregistrées</span>
       </div>
       ${top.map(p => productCardHtml(p,true)).join('')}
       ${rest.length ? `<div class="sell-product-section-title all-products"><b>Tous les autres produits</b></div>${rest.map(p => productCardHtml(p,false)).join('')}` : ''}
@@ -1390,6 +1418,10 @@ function renderSellProducts() {
 function addToCart(id) {
   const product = products.find(p => p.id === id)
   if (!product) return
+
+  if (product.pricing_mode === 'tiered_weight' && !tiersForProduct(id).length && !(num(product.sale_price_ht)>0)) {
+    return alert('Tarif à compléter pour ce produit dans l’onglet Produits.')
+  }
 
   if (product.pricing_mode === 'free_unit') {
     const raw = prompt(`Prix de vente pour « ${product.name} » (€ par unité) :`)
@@ -1613,17 +1645,22 @@ function renderProducts() {
   body.innerHTML = products.filter(p =>
     p.name.toLowerCase().includes(query) ||
     String(p.sku || '').toLowerCase().includes(query) ||
-    String(p.subfamily || '').toLowerCase().includes(query)
+    String(p.subfamily || '').toLowerCase().includes(query) ||
+    String(p.preferred_supplier || '').toLowerCase().includes(query) ||
+    String(p.supplier_reference || '').toLowerCase().includes(query)
   ).map(p => {
     const category = categories.find(c => c.id === p.category_id)?.name || '—'
+    const stock = p.stock_pending ? '<span class="muted">À saisir</span>' : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
     return `
       <tr>
         <td>${esc(p.sku || '—')}</td>
-        <td><b>${esc(p.name)}</b></td>
+        <td><b>${esc(p.name)}</b>${p.top20_hint ? '<div class="small"><b>Top 20</b></div>' : ''}</td>
         <td>${esc(category)}</td>
         <td>${esc(p.subfamily || '—')}</td>
-        <td>${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}</td>
-        <td>${eur(p.purchase_price_ht)}</td>
+        <td>${stock}</td>
+        <td>${esc(p.preferred_supplier || '—')}</td>
+        <td>${esc(p.supplier_reference || '—')}</td>
+        <td>${num(p.purchase_price_ht)>0 ? eur(p.purchase_price_ht) : '—'}</td>
         <td><span class="small">${productPriceSummary(p)}</span></td>
         <td>${boolLabel(p.loyalty_eligible)}</td>
         <td><span class="status ${p.active ? 'ok' : 'off'}">${p.active ? 'Actif' : 'Inactif'}</span></td>
@@ -1916,20 +1953,24 @@ function openProductDialog(productId = null) {
     .filter(c => c.active || c.id === product?.category_id)
     .map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
 
-  ;['pName','pSubfamily','pStock','pThreshold','pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200']
+  ;['pName','pSubfamily','pStock','pThreshold','pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef']
     .forEach(id => {
       const el = document.querySelector('#'+id)
       if (el) el.value = ''
     })
+  document.querySelector('#pTop20').checked=false
 
   if (product) {
     document.querySelector('#pName').value = product.name || ''
     document.querySelector('#pCategory').value = product.category_id || ''
     document.querySelector('#pSubfamily').value = product.subfamily || ''
     document.querySelector('#pPricingMode').value = product.pricing_mode || 'tiered_weight'
-    document.querySelector('#pStock').value = num(product.stock_quantity)
+    document.querySelector('#pStock').value = product.stock_pending ? '' : num(product.stock_quantity)
     document.querySelector('#pThreshold').value = num(product.stock_alert_threshold)
     document.querySelector('#pBuy').value = num(product.purchase_price_ht) || ''
+    document.querySelector('#pSupplier').value = product.preferred_supplier || ''
+    document.querySelector('#pSupplierRef').value = product.supplier_reference || ''
+    document.querySelector('#pTop20').checked = !!product.top20_hint
     if (product.pricing_mode === 'fixed_unit') document.querySelector('#pSell').value = num(product.sale_price_ht) || ''
 
     for (const tier of tiersForProduct(product.id)) {
@@ -1951,6 +1992,7 @@ async function saveProduct() {
   msg.textContent = ''
 
   const editId = dialog.dataset.editId || null
+  const existingProduct = editId ? products.find(p=>p.id===editId) : null
   const pricingMode = document.querySelector('#pPricingMode').value
   const stockUnit = pricingMode === 'tiered_weight' ? 'g' : 'unit'
   const tiers = [
@@ -1961,6 +2003,10 @@ async function saveProduct() {
   ].filter(([,price]) => price > 0).map(([quantity,price_ht]) => ({quantity,price_ht}))
 
   const fallback = tiers.find(t => t.quantity === 100) || tiers[0]
+  const stockRaw=document.querySelector('#pStock').value.trim()
+  const stockPending=stockRaw===''
+  const stockPlaceholder=stockUnit==='g' ? 100000 : 1000
+
   const payload = {
     organization_id: organizationId,
     name: document.querySelector('#pName').value.trim(),
@@ -1971,8 +2017,9 @@ async function saveProduct() {
     purchase_unit: stockUnit === 'g' ? 'sachet' : 'unité',
     purchase_unit_quantity: stockUnit === 'g' ? 500 : 1,
     purchase_unit_stock_equivalent: stockUnit === 'g' ? 500 : 1,
-    stock_quantity: Number(document.querySelector('#pStock').value || 0),
+    stock_quantity: stockPending ? Math.max(num(existingProduct?.stock_quantity),stockPlaceholder) : Number(stockRaw || 0),
     stock_alert_threshold: Number(document.querySelector('#pThreshold').value || 0),
+    stock_pending: stockPending,
     purchase_price_ht: Number(document.querySelector('#pBuy').value || 0),
     purchase_price_basis: stockUnit === 'g' ? 100 : 1,
     sale_price_ht: pricingMode === 'tiered_weight'
@@ -1981,11 +2028,13 @@ async function saveProduct() {
     sale_price_basis: pricingMode === 'tiered_weight'
       ? num(fallback?.quantity || 100)
       : 1,
+    preferred_supplier: document.querySelector('#pSupplier').value.trim() || null,
+    supplier_reference: document.querySelector('#pSupplierRef').value.trim() || null,
+    top20_hint: document.querySelector('#pTop20').checked,
     updated_at: new Date().toISOString()
   }
 
   if (!payload.name) return msg.textContent = 'Nom obligatoire.'
-  if (pricingMode === 'tiered_weight' && !tiers.length) return msg.textContent = 'Ajoute au moins un prix par palier.'
 
   try {
     let productId = editId
@@ -2250,7 +2299,7 @@ function renderBackupPanel() {
   const techRows = document.querySelector('#backupTechRows')
   if (techRows) {
     techRows.innerHTML = `
-      <tr><td>Version application</td><td>Sprint 6D — ergonomie marché</td></tr>
+      <tr><td>Version application</td><td>Sprint 6E — catalogue & clients 08/10</td></tr>
       <tr><td>Organisation</td><td>${esc(organizationId || '—')}</td></tr>
       <tr><td>Snapshot hors ligne</td><td>${offlineSnapshot?.saved_at ? fmtDateTime(offlineSnapshot.saved_at) : 'Non disponible'}</td></tr>
       <tr><td>Produits mémorisés</td><td>${offlineSnapshot?.products?.length ?? products.length}</td></tr>
@@ -2379,6 +2428,7 @@ function downloadCsv(filename, headers, rows) {
 function exportProducts() {
   const headers = [
     'sku','name','category','subfamily','active','stock_unit','pricing_mode',
+    'preferred_supplier','supplier_reference','top20_hint','stock_pending',
     'sale_price_25g_ht','sale_price_50g_ht','sale_price_100g_ht','sale_price_200g_ht','sale_price_unit_ht',
     'sale_price_ht','sale_price_basis','purchase_unit','purchase_unit_quantity',
     'purchase_unit_stock_equivalent','stock_quantity','stock_alert_threshold',
@@ -2390,10 +2440,11 @@ function exportProducts() {
   const rows = products.map(p => [
     p.sku,p.name,categories.find(c => c.id === p.category_id)?.name || '',p.subfamily || '',
     p.active,p.stock_unit,p.pricing_mode || 'tiered_weight',
+    p.preferred_supplier || '',p.supplier_reference || '',!!p.top20_hint,!!p.stock_pending,
     tierValue(p.id,25),tierValue(p.id,50),tierValue(p.id,100),tierValue(p.id,200),
     p.pricing_mode === 'fixed_unit' ? p.sale_price_ht : '',
     p.sale_price_ht,p.sale_price_basis,p.purchase_unit,p.purchase_unit_quantity,
-    p.purchase_unit_stock_equivalent,p.stock_quantity,p.stock_alert_threshold,
+    p.purchase_unit_stock_equivalent,p.stock_pending ? '' : p.stock_quantity,p.stock_alert_threshold,
     p.purchase_price_ht,p.purchase_price_basis,p.vat_rate_purchase,p.vat_rate_sale,
     p.loyalty_eligible,p.loyalty_reward_quantity
   ])
@@ -2402,10 +2453,17 @@ function exportProducts() {
 }
 
 function exportClients() {
-  const headers = ['customer_code','display_name','phone','email','notes','active']
-  const rows = customers.map(c => [
-    c.customer_code, c.display_name, c.phone, c.email, c.notes, c.active
-  ])
+  const headers = [
+    'customer_code','display_name','phone','email','notes','active',
+    'loyalty_progress','pending_rewards','historical_rewards_used'
+  ]
+  const rows = customers.map(c => {
+    const info=loyaltyInfo(c.id)
+    return [
+      c.customer_code,c.display_name,c.phone,c.email,c.notes,c.active,
+      info.progress,info.availableRewards,info.used
+    ]
+  })
   downloadCsv(`clients_${todayStamp()}.csv`, headers, rows)
 }
 
@@ -2551,6 +2609,7 @@ function analyzeProductImport(rows) {
   const creates = [], updates = [], unchanged = [], errors = []
   const bySku = new Map(products.filter(p => p.sku).map(p => [p.sku.trim().toUpperCase(), p]))
   const categoryByName = new Map(categories.map(c => [c.name.trim().toLowerCase(), c]))
+  const fullCatalog = rows.some(row => String(row.catalog_scope || '').trim().toLowerCase() === 'full')
 
   rows.forEach((row, index) => {
     const lineNo = index + 2
@@ -2569,16 +2628,16 @@ function analyzeProductImport(rows) {
       return
     }
 
-    const hasTierColumns = ['sale_price_25g_ht','sale_price_50g_ht','sale_price_100g_ht','sale_price_200g_ht']
-      .some(key => Object.prototype.hasOwnProperty.call(row,key))
-    const tiers = [
-      [25,parseNumber(row.sale_price_25g_ht,0)],
-      [50,parseNumber(row.sale_price_50g_ht,0)],
-      [100,parseNumber(row.sale_price_100g_ht,0)],
-      [200,parseNumber(row.sale_price_200g_ht,0)]
-    ].filter(([,price]) => price > 0).map(([quantity,price_ht]) => ({quantity,price_ht}))
+    const tierSource = qty => row[`sale_price_${qty}g_ht`] ?? row[`price_${qty}g`] ?? ''
+    const hasTierColumns = [25,50,100,200].some(qty =>
+      Object.prototype.hasOwnProperty.call(row,`sale_price_${qty}g_ht`) ||
+      Object.prototype.hasOwnProperty.call(row,`price_${qty}g`)
+    )
+    const tiers = [25,50,100,200]
+      .map(quantity => ({quantity,price_ht:parseNumber(tierSource(quantity),0)}))
+      .filter(t => t.price_ht > 0)
 
-    const pricingMode = String(row.pricing_mode || (tiers.length ? 'tiered_weight' : 'tiered_weight')).trim()
+    const pricingMode = String(row.pricing_mode || 'tiered_weight').trim()
     if (!['tiered_weight','fixed_unit','free_unit'].includes(pricingMode)) {
       errors.push(`Ligne ${lineNo} : mode de tarification inconnu "${pricingMode}".`)
       return
@@ -2586,6 +2645,12 @@ function analyzeProductImport(rows) {
 
     const fallback = tiers.find(t => t.quantity === 100) || tiers[0]
     const stockUnit = row.stock_unit || (pricingMode === 'tiered_weight' ? 'g' : 'unit')
+    const stockRaw = String(row.stock_quantity ?? '').trim()
+    const stockPending = parseBoolean(row.stock_pending, stockRaw === '')
+    const stockPlaceholder = stockUnit === 'g' ? 100000 : 1000
+    const fixedUnitPrice = parseNumber(row.sale_price_unit_ht ?? row.fixed_unit_price,0)
+    const purchasePrice = parseNumber(row.purchase_price_ht ?? row.purchase_price_ht_100g,0)
+
     const payload = {
       organization_id: organizationId,
       sku: sku || null,
@@ -2598,28 +2663,30 @@ function analyzeProductImport(rows) {
       purchase_unit: row.purchase_unit || (stockUnit === 'g' ? 'sachet' : 'unité'),
       purchase_unit_quantity: parseNumber(row.purchase_unit_quantity, stockUnit === 'g' ? 500 : 1),
       purchase_unit_stock_equivalent: parseNumber(row.purchase_unit_stock_equivalent, stockUnit === 'g' ? 500 : 1),
-      stock_quantity: parseNumber(row.stock_quantity, 0),
+      stock_quantity: stockRaw === '' ? stockPlaceholder : parseNumber(stockRaw, stockPlaceholder),
       stock_alert_threshold: parseNumber(row.stock_alert_threshold, 0),
-      purchase_price_ht: parseNumber(row.purchase_price_ht, 0),
+      stock_pending: stockPending,
+      purchase_price_ht: purchasePrice,
       purchase_price_basis: parseNumber(row.purchase_price_basis, stockUnit === 'g' ? 100 : 1),
       sale_price_ht: parseNumber(row.sale_price_ht,
-        pricingMode === 'fixed_unit' ? parseNumber(row.sale_price_unit_ht,0) : num(fallback?.price_ht)),
+        pricingMode === 'fixed_unit' ? fixedUnitPrice : num(fallback?.price_ht)),
       sale_price_basis: parseNumber(row.sale_price_basis,
         pricingMode === 'tiered_weight' ? num(fallback?.quantity || 100) : 1),
       vat_rate_purchase: parseNumber(row.vat_rate_purchase, 0),
       vat_rate_sale: parseNumber(row.vat_rate_sale, 0),
       loyalty_eligible: parseBoolean(row.loyalty_eligible, false),
-      loyalty_reward_quantity: parseNumber(row.loyalty_reward_quantity, stockUnit === 'g' ? 100 : 1)
+      loyalty_reward_quantity: parseNumber(row.loyalty_reward_quantity, stockUnit === 'g' ? 100 : 1),
+      preferred_supplier: String(row.preferred_supplier || '').trim() || null,
+      supplier_reference: String(row.supplier_reference || '').trim() || null,
+      top20_hint: parseBoolean(row.top20_hint, false)
     }
 
-    const enrich = item => ({...item,_tiers:tiers,_tiersProvided:hasTierColumns})
+    const enrich = item => ({
+      ...item,_tiers:tiers,_tiersProvided:hasTierColumns,_fullCatalog:fullCatalog
+    })
 
     if (!sku) {
-      if (products.some(p => p.name.trim().toLowerCase() === name.toLowerCase())) {
-        errors.push(`Ligne ${lineNo} : "${name}" existe déjà mais la référence sku est vide. Utilise sa référence existante pour éviter un doublon.`)
-        return
-      }
-      creates.push(enrich({ ...payload, _action:'Créer', _code:'', _name:name }))
+      errors.push(`Ligne ${lineNo} : référence produit obligatoire pour le catalogue V4.`)
       return
     }
 
@@ -2637,16 +2704,16 @@ function analyzeProductImport(rows) {
     ;(changed ? updates : unchanged).push(item)
   })
 
-  return { creates, updates, unchanged, errors }
+  return { creates, updates, unchanged, errors, fullCatalog }
 }
 
 function productChanged(existing, payload) {
   const fields = [
     'name','category_id','subfamily','pricing_mode','active','stock_unit','purchase_unit',
     'purchase_unit_quantity','purchase_unit_stock_equivalent','stock_quantity',
-    'stock_alert_threshold','purchase_price_ht','purchase_price_basis',
+    'stock_alert_threshold','stock_pending','purchase_price_ht','purchase_price_basis',
     'sale_price_ht','sale_price_basis','vat_rate_purchase','vat_rate_sale',
-    'loyalty_eligible','loyalty_reward_quantity'
+    'loyalty_eligible','loyalty_reward_quantity','preferred_supplier','supplier_reference','top20_hint'
   ]
   return fields.some(field => String(existing[field] ?? '') !== String(payload[field] ?? ''))
 }
@@ -2679,35 +2746,42 @@ function analyzeClientImport(rows) {
       errors.push(`Ligne ${lineNo} : nom client manquant.`)
       return
     }
+    if (!code) {
+      errors.push(`Ligne ${lineNo} : référence client manquante.`)
+      return
+    }
 
     const payload = {
       organization_id: organizationId,
-      customer_code: code || null,
+      customer_code: code,
       display_name: name,
       phone: String(row.phone || '').trim() || null,
       email: String(row.email || '').trim() || null,
       notes: String(row.notes || '').trim() || null,
       active: parseBoolean(row.active, true)
     }
-
-    if (!code) {
-      if (customers.some(c => c.display_name.trim().toLowerCase() === name.toLowerCase())) {
-        errors.push(`Ligne ${lineNo} : "${name}" existe déjà mais customer_code est vide. Utilise sa référence existante pour éviter un doublon.`)
-        return
-      }
-      creates.push({ ...payload, _action: 'Créer', _code: '', _name: name })
-      return
-    }
+    const loyaltyProgress = Math.max(0,parseNumber(row.loyalty_progress,0))
+    const pendingRewards = Math.max(0,Math.floor(parseNumber(row.pending_rewards,0)))
+    const historicalRewardsUsed = Math.max(0,Math.floor(parseNumber(row.historical_rewards_used,0)))
+    const enrich = item => ({
+      ...item,
+      _loyaltyProgress:loyaltyProgress,
+      _pendingRewards:pendingRewards,
+      _historicalRewardsUsed:historicalRewardsUsed
+    })
 
     const existing = byCode.get(code)
     if (!existing) {
-      creates.push({ ...payload, _action: 'Créer', _code: code, _name: name })
+      creates.push(enrich({ ...payload, _action:'Créer', _code:code, _name:name }))
       return
     }
 
     const fields = ['display_name','phone','email','notes','active']
     const changed = fields.some(field => String(existing[field] ?? '') !== String(payload[field] ?? ''))
-    const item = { ...payload, id: existing.id, _action: changed ? 'Modifier' : 'Inchangé', _code: code, _name: name }
+      || Object.prototype.hasOwnProperty.call(row,'loyalty_progress')
+      || Object.prototype.hasOwnProperty.call(row,'pending_rewards')
+      || Object.prototype.hasOwnProperty.call(row,'historical_rewards_used')
+    const item = enrich({ ...payload, id:existing.id, _action:changed ? 'Modifier':'Inchangé', _code:code, _name:name })
     ;(changed ? updates : unchanged).push(item)
   })
 
@@ -2721,32 +2795,54 @@ async function applyImport() {
   msg.textContent = 'Import en cours…'
 
   try {
+    const items=[...pendingImport.creates,...pendingImport.updates,...pendingImport.unchanged]
+
     if (pendingImport.type === 'products') {
-      for (const item of pendingImport.updates) {
-        const { id, _action, _code, _name, _tiers, _tiersProvided, ...payload } = item
-        const { error } = await supabase.from('products').update(payload).eq('id', id)
-        if (error) throw error
-        if (_tiersProvided) await syncProductTiers(id,_tiers)
-      }
-      for (const item of pendingImport.creates) {
-        const { _action, _code, _name, _tiers, _tiersProvided, ...payload } = item
-        if (!payload.sku) delete payload.sku
-        const { data:created, error } = await supabase.from('products').insert(payload).select('id').single()
-        if (error) throw error
-        if (_tiersProvided) await syncProductTiers(created.id,_tiers)
-      }
+      const payload=items.map(item => ({
+        sku:item.sku,
+        name:item.name,
+        category_id:item.category_id,
+        subfamily:item.subfamily,
+        pricing_mode:item.pricing_mode,
+        active:item.active,
+        stock_quantity:item.stock_quantity,
+        stock_alert_threshold:item.stock_alert_threshold,
+        stock_pending:item.stock_pending,
+        purchase_price_ht:item.purchase_price_ht,
+        purchase_price_basis:item.purchase_price_basis,
+        sale_price_ht:item.sale_price_ht,
+        sale_price_basis:item.sale_price_basis,
+        vat_rate_purchase:item.vat_rate_purchase,
+        vat_rate_sale:item.vat_rate_sale,
+        loyalty_eligible:item.loyalty_eligible,
+        loyalty_reward_quantity:item.loyalty_reward_quantity,
+        preferred_supplier:item.preferred_supplier,
+        supplier_reference:item.supplier_reference,
+        top20_hint:item.top20_hint,
+        tiers:item._tiers || []
+      }))
+      const {error}=await supabase.rpc('import_products_catalog_v4',{
+        p_rows:payload,
+        p_full_catalog:!!pendingImport.fullCatalog
+      })
+      if(error) throw error
     } else {
-      for (const item of pendingImport.updates) {
-        const { id, _action, _code, _name, ...payload } = item
-        const { error } = await supabase.from('customers').update(payload).eq('id', id)
-        if (error) throw error
-      }
-      for (const item of pendingImport.creates) {
-        const { _action, _code, _name, ...payload } = item
-        if (!payload.customer_code) delete payload.customer_code
-        const { error } = await supabase.from('customers').insert(payload)
-        if (error) throw error
-      }
+      const payload=items.map(item => ({
+        customer_code:item.customer_code,
+        display_name:item.display_name,
+        phone:item.phone,
+        email:item.email,
+        notes:item.notes,
+        active:item.active,
+        loyalty_progress:item._loyaltyProgress || 0,
+        pending_rewards:item._pendingRewards || 0,
+        historical_rewards_used:item._historicalRewardsUsed || 0
+      }))
+      const {error}=await supabase.rpc('import_clients_with_loyalty_v2',{
+        p_rows:payload,
+        p_source_label:'08/10/2026'
+      })
+      if(error) throw error
     }
 
     document.querySelector('#importDialog').close()
