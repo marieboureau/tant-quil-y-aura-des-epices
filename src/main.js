@@ -18,6 +18,7 @@ let cart = []
 let selectedCustomer = null
 let paymentMode = 'card'
 let discountPercent = 0
+let discountAmountEuros = null
 let commercialGiftAmount = 0
 let pendingImport = null
 let managementExpenses = []
@@ -249,15 +250,16 @@ function renderShell() {
                     <button type="button" class="secondary discount-btn" data-discount="5">5 %</button>
                     <button type="button" class="secondary discount-btn" data-discount="10">10 %</button>
                     <button type="button" class="secondary discount-btn" data-discount="20">20 %</button>
-                    <input id="customDiscount" class="field compact discount-custom" type="number" min="0" max="100" step="0.5" placeholder="% libre">
+                    <input id="customDiscount" class="field compact discount-custom" type="number" min="0" max="100" step="0.5" placeholder="% libre" aria-label="Remise en pourcentage">
+                    <input id="discountEuro" class="field compact discount-euro" type="number" min="0" step="0.01" placeholder="Remise €" aria-label="Remise en euros">
                   </div>
                 </div>
-                <div class="margin-panel">
-                  <div class="small">Marge ticket estimée</div>
+                <details class="margin-panel margin-compact">
+                  <summary class="small">Voir la marge estimée</summary>
                   <div class="row space"><span>Avant geste</span><b id="marginBefore">—</b></div>
                   <div class="row space"><span id="marginAfterLabel">Après remise / offert</span><b id="marginAfter">—</b></div>
                   <div id="marginHint" class="small"></div>
-                </div>
+                </details>
               </div>
 
               <div id="ticketAdjustments" class="ticket-adjustments">
@@ -1106,8 +1108,10 @@ function bindEvents() {
 
   document.querySelectorAll('.discount-btn').forEach(btn => btn.onclick = () => {
     discountPercent = Number(btn.dataset.discount || 0)
+    discountAmountEuros = null
     document.querySelectorAll('.discount-btn').forEach(x => x.classList.toggle('active', x === btn))
     document.querySelector('#customDiscount').value = ''
+    document.querySelector('#discountEuro').value = ''
     if (paymentMode === 'gift' && document.querySelector('#mixedBox').style.display === 'none') {
       commercialGiftAmount = ticketAfterDiscountHt()
     }
@@ -1115,7 +1119,21 @@ function bindEvents() {
   })
   document.querySelector('#customDiscount').oninput = event => {
     discountPercent = Math.max(0, Math.min(100, Number(event.target.value || 0)))
+    discountAmountEuros = null
+    document.querySelector('#discountEuro').value = ''
     document.querySelectorAll('.discount-btn').forEach(x => x.classList.remove('active'))
+    if (paymentMode === 'gift' && document.querySelector('#mixedBox').style.display === 'none') {
+      commercialGiftAmount = ticketAfterDiscountHt()
+    }
+    renderCart()
+  }
+
+  document.querySelector('#discountEuro').oninput = event => {
+    const value = event.target.value.trim()
+    discountAmountEuros = value === '' ? null : Math.max(0, Number(value) || 0)
+    discountPercent = 0
+    document.querySelector('#customDiscount').value = ''
+    document.querySelectorAll('.discount-btn').forEach(x => x.classList.toggle('active', discountAmountEuros === null && x.dataset.discount === '0'))
     if (paymentMode === 'gift' && document.querySelector('#mixedBox').style.display === 'none') {
       commercialGiftAmount = ticketAfterDiscountHt()
     }
@@ -1390,7 +1408,15 @@ function ticketGrossHt() {
 }
 
 function ticketDiscountHt() {
-  return Number((ticketGrossHt() * discountPercent / 100).toFixed(2))
+  const gross = ticketGrossHt()
+  if (discountAmountEuros !== null) return Math.min(gross, Math.max(0,Number(discountAmountEuros.toFixed(2))))
+  return Number((gross * discountPercent / 100).toFixed(2))
+}
+
+function effectiveDiscountPercent() {
+  const gross = ticketGrossHt()
+  return discountAmountEuros === null ? discountPercent
+    : gross > 0 ? Number((ticketDiscountHt() / gross * 100).toFixed(8)) : 0
 }
 
 function ticketAfterDiscountHt() {
@@ -1692,7 +1718,7 @@ async function completeSale() {
       ...(item.lineNote ? { line_note:item.lineNote } : {})
     })),
     payments: payRows,
-    discount_percent: discountPercent,
+    discount_percent: effectiveDiscountPercent(),
     commercial_gift_amount: gift,
     note: gift > 0 ? 'Vente avec geste commercial offert' : null,
     total
@@ -2208,10 +2234,12 @@ function clearSaleForm() {
   if (mixCheque) mixCheque.value = ''
   if (mixGift) mixGift.value = ''
   discountPercent = 0
+  discountAmountEuros = null
   commercialGiftAmount = 0
   paymentMode = 'card'
   document.querySelectorAll('.discount-btn').forEach(x => x.classList.toggle('active', x.dataset.discount === '0'))
   if (document.querySelector('#customDiscount')) document.querySelector('#customDiscount').value = ''
+  if (document.querySelector('#discountEuro')) document.querySelector('#discountEuro').value = ''
   document.querySelectorAll('.pay').forEach(x => x.classList.toggle('active', x.dataset.pay === 'card'))
   if (document.querySelector('#mixedBox')) document.querySelector('#mixedBox').style.display = 'none'
   renderCart()
