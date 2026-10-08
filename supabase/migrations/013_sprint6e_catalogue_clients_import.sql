@@ -7,33 +7,27 @@ alter table public.products add column if not exists top20_hint boolean not null
 alter table public.products add column if not exists stock_pending boolean not null default false;
 
 do $$
-declare
-  v_org uuid;
 begin
-  v_org := public.current_organization_id();
-  if v_org is null then
-    raise exception 'Utilisateur sans organisation';
-  end if;
-
   insert into public.product_categories(organization_id,name,active,sort_order)
-  select v_org,v.name,true,v.sort_order
-  from (values
+  select s.organization_id,v.name,true,v.sort_order
+  from public.settings s
+  cross join (values
     ('Cafés',10),('Thés',20),('Tisanes & rooibos',30),('Épices',40),
     ('Herbes & graines',50),('Sucres',60),('Accessoires',70)
   ) as v(name,sort_order)
   where not exists (
     select 1 from public.product_categories pc
-    where pc.organization_id=v_org and lower(pc.name)=lower(v.name)
+    where pc.organization_id=s.organization_id and lower(pc.name)=lower(v.name)
   );
 
   update public.product_categories pc
-  set active=true,
-      sort_order=v.sort_order
-  from (values
+  set active=true, sort_order=v.sort_order
+  from public.settings s
+  cross join (values
     ('Cafés',10),('Thés',20),('Tisanes & rooibos',30),('Épices',40),
     ('Herbes & graines',50),('Sucres',60),('Accessoires',70)
   ) as v(name,sort_order)
-  where pc.organization_id=v_org and lower(pc.name)=lower(v.name);
+  where pc.organization_id=s.organization_id and lower(pc.name)=lower(v.name);
 end $$;
 
 create or replace function public.import_products_catalog_v4(
