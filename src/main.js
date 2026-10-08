@@ -2627,7 +2627,7 @@ function downloadCsv(filename, headers, rows) {
 function exportProducts() {
   const headers = [
     'sku','name','category','subfamily','active','stock_unit','pricing_mode',
-    'preferred_supplier','supplier_reference','top20_hint','stock_pending',
+    'preferred_supplier','supplier_reference','top20_hint','stock_pending','stock_tracked',
     'sale_price_25g_ht','sale_price_50g_ht','sale_price_100g_ht','sale_price_200g_ht','sale_price_unit_ht',
     'sale_price_ht','sale_price_basis','purchase_unit','purchase_unit_quantity',
     'purchase_unit_stock_equivalent','stock_quantity','stock_alert_threshold',
@@ -2639,7 +2639,7 @@ function exportProducts() {
   const rows = products.map(p => [
     p.sku,p.name,categories.find(c => c.id === p.category_id)?.name || '',p.subfamily || '',
     p.active,p.stock_unit,p.pricing_mode || 'tiered_weight',
-    p.preferred_supplier || '',p.supplier_reference || '',!!p.top20_hint,!!p.stock_pending,
+    p.preferred_supplier || '',p.supplier_reference || '',!!p.top20_hint,!!p.stock_pending,p.stock_tracked !== false,
     tierValue(p.id,25),tierValue(p.id,50),tierValue(p.id,100),tierValue(p.id,200),
     p.pricing_mode === 'fixed_unit' ? p.sale_price_ht : '',
     p.sale_price_ht,p.sale_price_basis,p.purchase_unit,p.purchase_unit_quantity,
@@ -2877,7 +2877,8 @@ function analyzeProductImport(rows) {
       loyalty_reward_quantity: parseNumber(row.loyalty_reward_quantity, stockUnit === 'g' ? 100 : 1),
       preferred_supplier: String(row.preferred_supplier || '').trim() || null,
       supplier_reference: String(row.supplier_reference || '').trim() || null,
-      top20_hint: parseBoolean(row.top20_hint, false)
+      top20_hint: parseBoolean(row.top20_hint, false),
+      stock_tracked: parseBoolean(row.stock_tracked, true)
     }
 
     const enrich = item => ({
@@ -2912,7 +2913,7 @@ function productChanged(existing, payload) {
     'purchase_unit_quantity','purchase_unit_stock_equivalent','stock_quantity',
     'stock_alert_threshold','stock_pending','purchase_price_ht','purchase_price_basis',
     'sale_price_ht','sale_price_basis','vat_rate_purchase','vat_rate_sale',
-    'loyalty_eligible','loyalty_reward_quantity','preferred_supplier','supplier_reference','top20_hint'
+    'loyalty_eligible','loyalty_reward_quantity','preferred_supplier','supplier_reference','top20_hint','stock_tracked'
   ]
   return fields.some(field => String(existing[field] ?? '') !== String(payload[field] ?? ''))
 }
@@ -3018,6 +3019,7 @@ async function applyImport() {
         preferred_supplier:item.preferred_supplier,
         supplier_reference:item.supplier_reference,
         top20_hint:item.top20_hint,
+        stock_tracked:item.stock_tracked,
         tiers:item._tiers || []
       }))
       const {error}=await supabase.rpc('import_products_catalog_v4',{
