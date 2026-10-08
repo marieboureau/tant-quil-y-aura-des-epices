@@ -61,6 +61,61 @@ const SUBFAMILIES = {
   'Accessoires': ['Accessoires']
 }
 
+const PRODUCT_DRAFT_FIELDS = ['pName','pCategory','pSubfamily','pPricingMode','pStock','pThreshold',
+  'pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef','pTop20','pStockTracked']
+const CLIENT_DRAFT_FIELDS = ['cName','cVisits','cPhone','cEmail']
+function readFormDraft() {
+  try { return JSON.parse(sessionStorage.getItem('epices_form_draft') || 'null') }
+  catch { return null }
+}
+function saveFormDraft(event) {
+  const dialog = event.currentTarget
+  if (!dialog?.open) return
+  const ids = dialog.id === 'productDialog' ? PRODUCT_DRAFT_FIELDS : CLIENT_DRAFT_FIELDS
+  const data = Object.fromEntries(ids.map(id => {
+    const element = document.querySelector('#'+id)
+    return [id,element?.type === 'checkbox' ? !!element.checked : (element?.value ?? '')]
+  }))
+  sessionStorage.setItem('epices_form_draft', JSON.stringify({
+    dialogId:dialog.id,editId:dialog.dataset.editId || null,
+    updatedAt:Date.now(),data
+  }))
+}
+function restoreFormDraft() {
+  const draft = readFormDraft()
+  if (!draft) return
+  // Ne conserver un brouillon que pendant une journée et uniquement dans cet onglet.
+  if (!draft.updatedAt || Date.now()-draft.updatedAt > 24*3600*1000) {
+    sessionStorage.removeItem('epices_form_draft')
+    return
+  }
+  const dialog = document.querySelector('#'+draft.dialogId)
+  if (!dialog || dialog.open || !draft.data) return
+  if (draft.dialogId === 'productDialog') {
+    if (draft.editId && !products.some(p => p.id === draft.editId)) return
+    const btn = document.querySelector('nav button[data-tab="products"]')
+    if (btn) switchTab(btn)
+    openProductDialog(draft.editId)
+    document.querySelector('#pCategory').value = draft.data.pCategory || ''
+    renderSubfamilyChoices(draft.data.pSubfamily || '')
+  } else if (draft.dialogId === 'clientDialog') {
+    if (draft.editId && !customers.some(c => c.id === draft.editId)) return
+    const btn = document.querySelector('nav button[data-tab="clients"]')
+    if (btn) switchTab(btn)
+    openClientDialog(draft.editId)
+  } else return
+  for (const [id,value] of Object.entries(draft.data)) {
+    const element = document.querySelector('#'+id)
+    if (!element) continue
+    if (element.type === 'checkbox') element.checked = !!value
+    else element.value = value
+  }
+  if (draft.dialogId === 'productDialog') {
+    updateProductPricingForm()
+    updateTrackedStockForm()
+  } else renderClientDuplicateHint()
+}
+
 function renderSubfamilyChoices(selected = '') {
   const select = document.querySelector('#pSubfamily')
   const categoryId = document.querySelector('#pCategory')?.value
@@ -1153,6 +1208,15 @@ function bindEvents() {
   document.querySelector('#pStockTracked').onchange = updateTrackedStockForm
   document.querySelector('#saveClientBtn').onclick = saveCustomer
   document.querySelector('#cName').oninput = renderClientDuplicateHint
+  for (const id of ['productDialog','clientDialog']) {
+    const dialog = document.querySelector('#'+id)
+    dialog.addEventListener('input', saveFormDraft)
+    dialog.addEventListener('change', saveFormDraft)
+    dialog.addEventListener('close', () => {
+      const draft = readFormDraft()
+      if (draft?.dialogId === id) sessionStorage.removeItem('epices_form_draft')
+    })
+  }
   document.querySelector('#validateSale').onclick = completeSale
   document.querySelector('#saveLoyaltyBtn').onclick = saveLoyaltySettings
 
@@ -1373,6 +1437,7 @@ async function loadData() {
   remittanceItems = remittanceItemsRes.data || []
 
   renderAll()
+  restoreFormDraft()
 }
 
 function renderAll() {
