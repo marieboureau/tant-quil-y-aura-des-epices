@@ -516,3 +516,49 @@ main,
 #productDialog .product-form-grid{
   align-items:end;
 }
+
+
+/* Sprint 6F — utilisation rapide sur le banc */
+.search-wrap{position:relative;width:100%;min-width:0}
+.search-wrap > .field{width:100%;padding-right:46px}
+.search-clear{
+  position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  display:flex;align-items:center;justify-content:center;
+  width:35px;height:35px;padding:0;border:1px solid #e8dfd4;border-radius:8px;
+  background:#f5f0e8;color:#5b4a38;font-size:23px;line-height:1;cursor:pointer;
+}
+.search-clear:focus-visible{outline:3px solid #917251;outline-offset:1px}
+#sell .sale-adjustments{gap:9px;align-items:start;margin-top:7px}
+#sell .discount-buttons{gap:5px;flex-wrap:wrap}
+#sell .discount-buttons > button{padding:6px 9px;min-height:34px}
+#sell .discount-buttons > input{width:106px;min-width:96px;padding:6px 7px}
+#sell .margin-panel.margin-compact{padding:6px 8px;border:1px solid #e4dacf;border-radius:8px}
+#sell .margin-compact summary{cursor:pointer;font-weight:600;color:#756c62;list-style-position:inside}
+#sell .margin-compact:not([open]) > *:not(summary){display:none}
+#sell .margin-compact .row.space{padding-top:5px;margin-top:4px;gap:3px}
+#sell .margin-compact .row.space b{font-size:13px;min-width:0;margin-top:0}
+#sell .margin-compact #marginHint{font-size:11px}
+#sell #ticketAdjustments{margin-top:7px}
+@media(max-width:1100px){
+  #sell .sale-adjustments{display:block}
+  #sell .margin-panel.margin-compact{margin-top:6px}
+  #sell #validateSale{position:sticky;bottom:8px;z-index:5;box-shadow:0 3px 10px #1f180e38;min-height:44px}
+}
+/* Couleurs volontairement douces ; le texte reste lisible sans couleur. */
+#sell .product-card.category-tea{background:#e9eefb;border-color:#ccd8f1}
+#sell .product-card.category-infusion{background:#e9f5f2;border-color:#c8e2da}
+#sell .product-card.category-spice{background:#fbf0e7;border-color:#efd8c5}
+#sell .product-card.category-houseblend{background:#ffe9d5;border-color:#edc39b}
+#sell .product-card.category-herbs{background:#edf3e4;border-color:#d3e1c4}
+#sell .product-card.category-coffee{background:#f2e9e2;border-color:#dcc9bd}
+#sell .product-card.category-sugar{background:#f5eaf4;border-color:#e3d0e1}
+#sell .product-card.category-accessory{background:#f0f0ef;border-color:#d8d8d6}
+#sell .product-card.category-houseblend small{color:#805223}
+#productDialog .house-blend-setting{
+  display:flex;gap:10px;align-items:flex-start;margin-top:12px;padding:10px;
+  border:1px solid var(--line);background:#f8f4ee;border-radius:9px;cursor:pointer
+}
+#productDialog .house-blend-setting input{width:19px;height:19px;flex-shrink:0;accent-color:var(--accent)}
+#productDialog .house-blend-setting small{color:var(--muted);line-height:1.4;display:block}
+#clientDialog #clientDuplicateWarning{font-size:12px;line-height:1.4}
+#treasury #cashVariancePreview{line-height:1.45;font-weight:500}
