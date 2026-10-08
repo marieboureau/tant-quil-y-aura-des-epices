@@ -660,15 +660,19 @@ function renderShell() {
               <label class="small">Date</label>
               <input id="closingDate" class="field" type="date">
               <div id="closingExpected" class="notice" style="margin-top:8px"></div>
+              <label class="small" style="display:block;margin-top:10px">Fonds de caisse à l'ouverture (€)</label>
+              <input id="openingCashFloat" class="field" type="number" step="0.01" min="0" placeholder="Espèces présentes avant toute vente">
+              <div class="small">Ce fonds n'est pas une vente. À renseigner pour chaque clôture.</div>
               <label class="small" style="display:block;margin-top:10px">Espèces comptées</label>
               <input id="cashCounted" class="field" type="number" step="0.01" min="0" placeholder="0,00">
+              <div id="cashVariancePreview" class="notice" style="margin-top:8px"></div>
               <label class="small" style="display:block;margin-top:10px">Note</label>
               <input id="closingNote" class="field" placeholder="Facultatif">
               <button id="saveClosingBtn" class="primary" style="margin-top:10px">Enregistrer la clôture</button>
               <div id="closingMsg" class="small" style="margin-top:6px"></div>
               <div class="table-wrap" style="margin-top:12px">
                 <table>
-                  <thead><tr><th>Date</th><th>CB</th><th>Espèces th.</th><th>Espèces comptées</th><th>Écart</th></tr></thead>
+                  <thead><tr><th>Date</th><th>CB</th><th>Fonds ouverture</th><th>Ventes espèces</th><th>Espèces comptées</th><th>Écart</th></tr></thead>
                   <tbody id="closingRows"></tbody>
                 </table>
               </div>
@@ -1266,6 +1270,8 @@ function bindEvents() {
   document.querySelector('#addExpenseBtn').onclick = addManagementExpense
   document.querySelector('#refreshTreasuryBtn').onclick = loadData
   document.querySelector('#closingDate').onchange = renderClosingExpected
+  document.querySelector('#openingCashFloat').oninput = renderCashClosingPreview
+  document.querySelector('#cashCounted').oninput = renderCashClosingPreview
   document.querySelector('#saveClosingBtn').onclick = saveCashClosing
   document.querySelector('#saveBankBalanceBtn').onclick = saveBankBalance
   document.querySelector('#bankCsvInput').onchange = event => importBankCsv(event.target.files?.[0])
@@ -4073,33 +4079,62 @@ function renderClosingExpected() {
   const existing = cashClosings.find(c => c.closing_date === date)
   box.innerHTML = `
     <div class="row space"><span>CB théorique</span><b>${eur(expected.card)}</b></div>
-    <div class="row space"><span>Espèces théoriques</span><b>${eur(expected.cash)}</b></div>
+    <div class="row space"><span>Ventes espèces saisies</span><b>${eur(expected.cash)}</b></div>
     <div class="row space"><span>Chèques</span><b>${eur(expected.cheque)}</b></div>
     ${existing ? `<div class="small" style="margin-top:5px">Une clôture existe déjà pour cette date : elle sera mise à jour.</div>` : ''}
   `
+  const floatInput = document.querySelector('#openingCashFloat')
+  if (floatInput) floatInput.value = existing ? num(existing.opening_cash_float).toFixed(2) : ''
   if (existing && document.querySelector('#cashCounted')) {
     document.querySelector('#cashCounted').value = num(existing.cash_counted).toFixed(2)
     document.querySelector('#closingNote').value = existing.note || ''
+  } else {
+    document.querySelector('#cashCounted').value = ''
+    document.querySelector('#closingNote').value = ''
   }
+  renderCashClosingPreview()
+}
+
+function renderCashClosingPreview() {
+  const box = document.querySelector('#cashVariancePreview')
+  if (!box) return
+  const date = document.querySelector('#closingDate')?.value
+  const opening = Number(document.querySelector('#openingCashFloat')?.value || 0)
+  const cash = Number(document.querySelector('#cashCounted')?.value || 0)
+  const expected = expectedByMethod(date).cash
+  const variance = Number((cash - opening - expected).toFixed(2))
+  if (!document.querySelector('#cashCounted')?.value) {
+    box.textContent = 'Attendu = fonds d’ouverture + ventes espèces enregistrées.'
+    return
+  }
+  box.textContent = 'Attendu : ' + eur(opening + expected) + ' · Écart : ' + eur(variance) +
+    (variance > 0 ? ' (excédent à justifier : ventes non saisies possibles)' :
+     variance < 0 ? ' (manquant à rechercher)' : ' (caisse équilibrée)')
 }
 
 async function saveCashClosing() {
   const msg = document.querySelector('#closingMsg')
   const date = document.querySelector('#closingDate').value
   const cashCounted = Number(document.querySelector('#cashCounted').value || 0)
+  const openingCashFloat = Number(document.querySelector('#openingCashFloat').value || 0)
   const note = document.querySelector('#closingNote').value.trim() || null
   const expected = expectedByMethod(date)
 
+  if (!Number.isFinite(openingCashFloat) || openingCashFloat < 0) {
+    msg.textContent = 'Le fonds de caisse doit être un montant positif.'
+    return
+  }
   msg.textContent = 'Enregistrement…'
 
   const payload = {
     organization_id: organizationId,
     closing_date: date,
+    opening_cash_float: openingCashFloat,
     card_total_expected: expected.card,
     cash_total_expected: expected.cash,
     cheque_total_expected: expected.cheque,
     cash_counted: cashCounted,
-    cash_variance: Number((cashCounted - expected.cash).toFixed(2)),
+    cash_variance: Number((cashCounted - openingCashFloat - expected.cash).toFixed(2)),
     note
   }
 
@@ -4122,11 +4157,12 @@ function renderClosings() {
     <tr>
       <td>${fmtDate(c.closing_date)}</td>
       <td>${eur(c.card_total_expected)}</td>
+      <td>${eur(c.opening_cash_float)}</td>
       <td>${eur(c.cash_total_expected)}</td>
       <td>${eur(c.cash_counted)}</td>
       <td class="${Math.abs(num(c.cash_variance)) > 0.01 ? 'low' : ''}">${eur(c.cash_variance)}</td>
     </tr>
-  `).join('') || '<tr><td colspan="5" class="muted">Aucune clôture enregistrée.</td></tr>'
+  `).join('') || '<tr><td colspan="6" class="muted">Aucune clôture enregistrée.</td></tr>'
 }
 
 async function saveBankBalance() {
