@@ -499,3 +499,20 @@ main,
 #remittances #remittanceKpis{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media(max-width:1100px){#remittances #remittanceKpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){#remittances #remittanceKpis{grid-template-columns:1fr}#sell .sell-product-section-title{flex-direction:column;align-items:flex-start;gap:2px}}
+
+
+/* Sprint 6E — catalogue réel */
+#sell .product-card.tariff-missing{
+  border-style:dashed;
+  opacity:.72;
+}
+#sell .product-card.tariff-missing span:not(.top-product-badge){
+  color:var(--muted);
+}
+#products td:nth-child(6),
+#products td:nth-child(7){
+  white-space:nowrap;
+}
+#productDialog .product-form-grid{
+  align-items:end;
+}
