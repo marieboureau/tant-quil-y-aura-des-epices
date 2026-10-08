@@ -3323,6 +3323,14 @@ function monthLong(index) {
   return ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'][index]
 }
 
+function unitemizedCashForPeriod(year, startMonth, endMonth = startMonth) {
+  return cashClosings.filter(c =>
+    dateYear(c.closing_date) === year &&
+    dateMonth(c.closing_date) >= startMonth &&
+    dateMonth(c.closing_date) <= endMonth
+  ).reduce((sum,c)=>sum+num(c.unitemized_cash_sales),0)
+}
+
 function pilotageMonthlyData() {
   const year = currentYear()
   const socialRate = num(settings?.micro_social_rate) / 100
@@ -3336,9 +3344,12 @@ function pilotageMonthlyData() {
     )
     const ids = new Set(monthSales.map(s => s.id))
     const lines = saleLines.filter(line => ids.has(line.sale_id))
-    const ca = monthSales.reduce((sum, sale) => sum + num(sale.total_ttc), 0)
+    const itemizedCa = monthSales.reduce((sum, sale) => sum + num(sale.total_ttc), 0)
+    const unitemizedCa = unitemizedCashForPeriod(year,month)
+    const ca = itemizedCa + unitemizedCa
     const caHt = monthSales.reduce((sum, sale) => sum + num(sale.total_ht), 0)
     const cost = lines.reduce((sum, line) => sum + lineCost(line), 0)
+    // Marge calculable uniquement sur les ventes détaillées.
     const grossMargin = caHt - cost
     const expenses = managementExpenses
       .filter(e => dateYear(e.expense_date) === year && dateMonth(e.expense_date) === month)
@@ -3351,6 +3362,7 @@ function pilotageMonthlyData() {
       month,
       ca,
       caHt,
+      unitemizedCa,
       cost,
       grossMargin,
       grossRate: caHt ? grossMargin / caHt * 100 : 0,
@@ -3825,10 +3837,10 @@ function renderPilotage() {
   const grossRateYtd = caHtYtd ? marginYtd / caHtYtd * 100 : 0
 
   document.querySelector('#pilotageKpis').innerHTML = `
-    <div class="card kpi"><div class="muted">CA du mois</div><div class="kpi-value">${eur(month.ca)}</div></div>
+    <div class="card kpi"><div class="muted">CA du mois</div><div class="kpi-value">${eur(month.ca)}</div>${month.unitemizedCa ? `<div class="small">${eur(month.unitemizedCa)} en espèces non détaillées</div>` : ''}</div>
     <div class="card kpi"><div class="muted">CA cumulé ${currentYear()}</div><div class="kpi-value">${eur(caYtd)}</div></div>
-    <div class="card kpi"><div class="muted">Marge brute cumulée</div><div class="kpi-value">${eur(marginYtd)}</div></div>
-    <div class="card kpi"><div class="muted">Taux de marge brute</div><div class="kpi-value">${grossRateYtd.toFixed(1)} %</div></div>
+    <div class="card kpi"><div class="muted">Marge sur ventes détaillées</div><div class="kpi-value">${eur(marginYtd)}</div><div class="small">Hors coûts des ventes espèces non ventilées</div></div>
+    <div class="card kpi"><div class="muted">Taux de marge détaillée</div><div class="kpi-value">${grossRateYtd.toFixed(1)} %</div></div>
   `
 
   renderThresholds(caYtd)
@@ -3933,7 +3945,8 @@ function renderUrssaf() {
     dateMonth(s.sold_at) <= endMonth
   )
 
-  const ca = qSales.reduce((sum, sale) => sum + num(sale.total_ttc), 0)
+  const ca = qSales.reduce((sum, sale) => sum + num(sale.total_ttc), 0) +
+    unitemizedCashForPeriod(now.getFullYear(),startMonth,endMonth)
   const caisseBanc = caisseBancAmountForSales(qSales)
   const socialRate = num(settings.micro_social_rate)
   const taxRate = num(settings.income_tax_rate)
@@ -4257,7 +4270,7 @@ function renderTreasury() {
 
   document.querySelector('#treasuryKpis').innerHTML = `
     <div class="card kpi"><div class="muted">CB théorique aujourd'hui</div><div class="kpi-value">${eur(todayExpected.card)}</div></div>
-    <div class="card kpi"><div class="muted">Espèces théoriques aujourd'hui</div><div class="kpi-value">${eur(todayExpected.cash)}</div></div>
+    <div class="card kpi"><div class="muted">Espèces encaissées aujourd'hui</div><div class="kpi-value">${eur(todayExpected.cash + num(cashClosings.find(c=>c.closing_date===today)?.unitemized_cash_sales))}</div></div>
     <div class="card kpi"><div class="muted">Solde bancaire saisi</div><div class="kpi-value">${eur(currentBalance)}</div></div>
     <div class="card kpi"><div class="muted">Prévision J+30</div><div class="kpi-value">${eur(forecast.d30)}</div></div>
   `
@@ -4281,7 +4294,7 @@ function renderClosingExpected() {
   box.innerHTML = `
     <div class="row space"><span>CB théorique</span><b>${eur(expected.card)}</b></div>
     <div class="row space"><span>Ventes espèces saisies</span><b>${eur(expected.cash)}</b></div>
-    <div class="row space"><span>Recettes non détaillées</span><b>${eur(num(document.querySelector('#unitemizedCashSales')?.value || existing?.unitemized_cash_sales))}</b></div>
+    <div class="row space"><span>Recettes non détaillées</span><b id="closingUnitemizedPreview">0,00 €</b></div>
     <div class="row space"><span>Chèques</span><b>${eur(expected.cheque)}</b></div>
     ${existing ? `<div class="small" style="margin-top:5px">Une clôture existe déjà pour cette date : elle sera mise à jour.</div>` : ''}
   `
@@ -4305,6 +4318,8 @@ function renderCashClosingPreview() {
   const date = document.querySelector('#closingDate')?.value
   const opening = Number(document.querySelector('#openingCashFloat')?.value || 0)
   const unitemized = Number(document.querySelector('#unitemizedCashSales')?.value || 0)
+  const unitemizedPreview = document.querySelector('#closingUnitemizedPreview')
+  if (unitemizedPreview) unitemizedPreview.textContent=eur(unitemized)
   const cash = Number(document.querySelector('#cashCounted')?.value || 0)
   const expected = expectedByMethod(date).cash
   const variance = Number((cash - opening - expected - unitemized).toFixed(2))
@@ -4627,7 +4642,10 @@ function recentDailySalesAverage() {
     new Date(s.sold_at) >= start &&
     new Date(s.sold_at) <= now
   )
-  const total = relevant.reduce((sum,s) => sum + num(s.total_ttc), 0)
+  const total = relevant.reduce((sum,s) => sum + num(s.total_ttc), 0) +
+    cashClosings.filter(c => new Date(c.closing_date+'T12:00:00') >= start &&
+      new Date(c.closing_date+'T12:00:00') <= now)
+      .reduce((sum,c)=>sum+num(c.unitemized_cash_sales),0)
   return total / 60
 }
 
