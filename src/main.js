@@ -2463,7 +2463,7 @@ async function saveCustomer() {
   const name = document.querySelector('#cName').value.trim()
   const rawVisits = document.querySelector('#cVisits').value.trim()
   if (!name) return msg.textContent = 'Nom et prénom obligatoires.'
-  if (!/^\\d+$/.test(rawVisits) || Number(rawVisits) > 1000000) {
+  if (!/^\d+$/.test(rawVisits) || Number(rawVisits) > 1000000) {
     return msg.textContent = 'Nombre de passages entier et positif requis.'
   }
   const btn = document.querySelector('#saveClientBtn')
