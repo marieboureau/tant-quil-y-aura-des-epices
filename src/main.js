@@ -745,6 +745,9 @@ function renderShell() {
               <label class="small" style="display:block;margin-top:10px">Fonds de caisse à l'ouverture (€)</label>
               <input id="openingCashFloat" class="field" type="number" step="0.01" min="0" placeholder="Espèces présentes avant toute vente">
               <div class="small">Ce fonds n'est pas une vente. À renseigner pour chaque clôture.</div>
+              <label class="small" style="display:block;margin-top:10px">Ventes espèces non détaillées (€)</label>
+              <input id="unitemizedCashSales" class="field" type="number" min="0" step="0.01" placeholder="Ex. 90 € de ventes non saisies">
+              <div class="small">Ce montant est ajouté au CA encaissé et à la caisse, mais jamais au stock ni aux ventes par produit. Ne pas y ressaisir une vente figurant déjà dans Vendre.</div>
               <label class="small" style="display:block;margin-top:10px">Espèces comptées</label>
               <input id="cashCounted" class="field" type="number" step="0.01" min="0" placeholder="0,00">
               <div id="cashVariancePreview" class="notice" style="margin-top:8px"></div>
@@ -754,7 +757,7 @@ function renderShell() {
               <div id="closingMsg" class="small" style="margin-top:6px"></div>
               <div class="table-wrap" style="margin-top:12px">
                 <table>
-                  <thead><tr><th>Date</th><th>CB</th><th>Fonds ouverture</th><th>Ventes espèces</th><th>Espèces comptées</th><th>Écart</th></tr></thead>
+                  <thead><tr><th>Date</th><th>CB</th><th>Fonds ouverture</th><th>Ventes espèces</th><th>Espèces non détaillées</th><th>Espèces comptées</th><th>Écart</th></tr></thead>
                   <tbody id="closingRows"></tbody>
                 </table>
               </div>
@@ -1387,6 +1390,7 @@ function bindEvents() {
   document.querySelector('#refreshTreasuryBtn').onclick = loadData
   document.querySelector('#closingDate').onchange = renderClosingExpected
   document.querySelector('#openingCashFloat').oninput = renderCashClosingPreview
+  document.querySelector('#unitemizedCashSales').oninput = renderCashClosingPreview
   document.querySelector('#cashCounted').oninput = renderCashClosingPreview
   document.querySelector('#saveClosingBtn').onclick = saveCashClosing
   document.querySelector('#saveBankBalanceBtn').onclick = saveBankBalance
@@ -4277,11 +4281,14 @@ function renderClosingExpected() {
   box.innerHTML = `
     <div class="row space"><span>CB théorique</span><b>${eur(expected.card)}</b></div>
     <div class="row space"><span>Ventes espèces saisies</span><b>${eur(expected.cash)}</b></div>
+    <div class="row space"><span>Recettes non détaillées</span><b>${eur(num(document.querySelector('#unitemizedCashSales')?.value || existing?.unitemized_cash_sales))}</b></div>
     <div class="row space"><span>Chèques</span><b>${eur(expected.cheque)}</b></div>
     ${existing ? `<div class="small" style="margin-top:5px">Une clôture existe déjà pour cette date : elle sera mise à jour.</div>` : ''}
   `
   const floatInput = document.querySelector('#openingCashFloat')
   if (floatInput) floatInput.value = existing ? num(existing.opening_cash_float).toFixed(2) : ''
+  const unitemizedInput = document.querySelector('#unitemizedCashSales')
+  if (unitemizedInput) unitemizedInput.value = existing ? num(existing.unitemized_cash_sales).toFixed(2) : ''
   if (existing && document.querySelector('#cashCounted')) {
     document.querySelector('#cashCounted').value = num(existing.cash_counted).toFixed(2)
     document.querySelector('#closingNote').value = existing.note || ''
@@ -4297,14 +4304,15 @@ function renderCashClosingPreview() {
   if (!box) return
   const date = document.querySelector('#closingDate')?.value
   const opening = Number(document.querySelector('#openingCashFloat')?.value || 0)
+  const unitemized = Number(document.querySelector('#unitemizedCashSales')?.value || 0)
   const cash = Number(document.querySelector('#cashCounted')?.value || 0)
   const expected = expectedByMethod(date).cash
-  const variance = Number((cash - opening - expected).toFixed(2))
+  const variance = Number((cash - opening - expected - unitemized).toFixed(2))
   if (!document.querySelector('#cashCounted')?.value) {
-    box.textContent = 'Attendu = fonds d’ouverture + ventes espèces enregistrées.'
+    box.textContent = 'Attendu = fonds d’ouverture + ventes saisies + recettes non détaillées.'
     return
   }
-  box.textContent = 'Attendu : ' + eur(opening + expected) + ' · Écart : ' + eur(variance) +
+  box.textContent = 'Attendu : ' + eur(opening + expected + unitemized) + ' · Écart : ' + eur(variance) +
     (variance > 0 ? ' (excédent à justifier : ventes non saisies possibles)' :
      variance < 0 ? ' (manquant à rechercher)' : ' (caisse équilibrée)')
 }
@@ -4314,11 +4322,13 @@ async function saveCashClosing() {
   const date = document.querySelector('#closingDate').value
   const cashCounted = Number(document.querySelector('#cashCounted').value || 0)
   const openingCashFloat = Number(document.querySelector('#openingCashFloat').value || 0)
+  const unitemizedCashSales = Number(document.querySelector('#unitemizedCashSales').value || 0)
   const note = document.querySelector('#closingNote').value.trim() || null
   const expected = expectedByMethod(date)
 
-  if (!Number.isFinite(openingCashFloat) || openingCashFloat < 0) {
-    msg.textContent = 'Le fonds de caisse doit être un montant positif.'
+  if (!Number.isFinite(openingCashFloat) || openingCashFloat < 0 ||
+      !Number.isFinite(unitemizedCashSales) || unitemizedCashSales < 0) {
+    msg.textContent = 'Les fonds et recettes doivent être des montants positifs.'
     return
   }
   msg.textContent = 'Enregistrement…'
@@ -4327,11 +4337,12 @@ async function saveCashClosing() {
     organization_id: organizationId,
     closing_date: date,
     opening_cash_float: openingCashFloat,
+    unitemized_cash_sales: unitemizedCashSales,
     card_total_expected: expected.card,
     cash_total_expected: expected.cash,
     cheque_total_expected: expected.cheque,
     cash_counted: cashCounted,
-    cash_variance: Number((cashCounted - openingCashFloat - expected.cash).toFixed(2)),
+    cash_variance: Number((cashCounted - openingCashFloat - expected.cash - unitemizedCashSales).toFixed(2)),
     note
   }
 
@@ -4356,10 +4367,11 @@ function renderClosings() {
       <td>${eur(c.card_total_expected)}</td>
       <td>${eur(c.opening_cash_float)}</td>
       <td>${eur(c.cash_total_expected)}</td>
+      <td>${eur(c.unitemized_cash_sales)}</td>
       <td>${eur(c.cash_counted)}</td>
       <td class="${Math.abs(num(c.cash_variance)) > 0.01 ? 'low' : ''}">${eur(c.cash_variance)}</td>
     </tr>
-  `).join('') || '<tr><td colspan="6" class="muted">Aucune clôture enregistrée.</td></tr>'
+  `).join('') || '<tr><td colspan="7" class="muted">Aucune clôture enregistrée.</td></tr>'
 }
 
 async function saveBankBalance() {
