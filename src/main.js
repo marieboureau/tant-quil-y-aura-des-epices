@@ -62,7 +62,8 @@ const SUBFAMILIES = {
 }
 
 const PRODUCT_DRAFT_FIELDS = ['pName','pCategory','pSubfamily','pPricingMode','pStock','pThreshold',
-  'pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef','pTop20','pStockTracked']
+  'pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef',
+  'pAltSupplier','pAltSupplierRef','pAltSupplierBuy','pTop20','pStockTracked']
 const CLIENT_DRAFT_FIELDS = ['cName','cVisits','cPhone','cEmail']
 function readFormDraft() {
   try { return JSON.parse(sessionStorage.getItem('epices_form_draft') || 'null') }
@@ -1092,14 +1093,26 @@ function renderShell() {
 
         <div class="grid product-form-grid" style="margin-top:10px">
           <div>
-            <label class="small">Fournisseur privilégié</label>
+            <label class="small">Fournisseur principal (actuel)</label>
             <input id="pSupplier" class="field" placeholder="Ex. Cailleau Herboristerie">
           </div>
           <div>
-            <label class="small">Référence fournisseur</label>
+            <label class="small">Référence fournisseur principal</label>
             <input id="pSupplierRef" class="field" placeholder="Ex. CAM11">
           </div>
         </div>
+        <details id="productAltSupplier" class="alternate-supplier-panel">
+          <summary>Fournisseur alternatif (second choix)</summary>
+          <div class="grid product-form-grid" style="margin-top:8px">
+            <div><label class="small">Nom du fournisseur alternatif</label>
+              <input id="pAltSupplier" class="field" placeholder="Ex. Cailleau Herboristerie"></div>
+            <div><label class="small">Référence fournisseur alternatif</label>
+              <input id="pAltSupplierRef" class="field" placeholder="Référence de commande"></div>
+            <div><label class="small">Prix d'achat alternatif HT (€)</label>
+              <input id="pAltSupplierBuy" class="field" type="number" min="0" step="0.01" placeholder="Si connu"></div>
+          </div>
+          <div class="small">Le coût alternatif utilise la même base (100 g ou unité) que le coût principal. Aucun remplacement automatique du fournisseur ni du coût de revient.</div>
+        </details>
         <label class="row small" style="margin-top:10px;gap:8px">
           <input id="pTop20" type="checkbox">
           Produit prioritaire / Top 20
@@ -1991,9 +2004,9 @@ function renderProducts() {
         <td>${esc(category)}</td>
         <td>${esc(p.subfamily || '—')}</td>
         <td>${stock}</td>
-        <td>${esc(p.preferred_supplier || '—')}</td>
-        <td>${esc(p.supplier_reference || '—')}</td>
-        <td>${num(p.purchase_price_ht)>0 ? eur(p.purchase_price_ht) : '—'}</td>
+        <td>${esc(p.preferred_supplier || '—')}${p.alternative_supplier ? `<div class="small muted">Alternative : ${esc(p.alternative_supplier)}</div>` : ''}</td>
+        <td>${esc(p.supplier_reference || '—')}${p.alternative_supplier_reference ? `<div class="small muted">Alt. : ${esc(p.alternative_supplier_reference)}</div>` : ''}</td>
+        <td>${num(p.purchase_price_ht)>0 ? eur(p.purchase_price_ht) : '—'}${num(p.alternative_purchase_price_ht)>0 ? `<div class="small muted">Alt. : ${eur(p.alternative_purchase_price_ht)}</div>` : ''}</td>
         <td><span class="small">${productPriceSummary(p)}</span></td>
         <td>${boolLabel(p.loyalty_eligible)}</td>
         <td><span class="status ${p.active ? 'ok' : 'off'}">${p.active ? 'Actif' : 'Inactif'}</span></td>
@@ -2290,7 +2303,7 @@ function openProductDialog(productId = null) {
     .map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
   document.querySelector('#pStockTracked').checked = product?.stock_tracked !== false
 
-  ;['pName','pStock','pThreshold','pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef']
+  ;['pName','pStock','pThreshold','pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef','pAltSupplier','pAltSupplierRef','pAltSupplierBuy']
     .forEach(id => {
       const el = document.querySelector('#'+id)
       if (el) el.value = ''
@@ -2307,6 +2320,10 @@ function openProductDialog(productId = null) {
     document.querySelector('#pBuy').value = num(product.purchase_price_ht) || ''
     document.querySelector('#pSupplier').value = product.preferred_supplier || ''
     document.querySelector('#pSupplierRef').value = product.supplier_reference || ''
+    document.querySelector('#pAltSupplier').value = product.alternative_supplier || ''
+    document.querySelector('#pAltSupplierRef').value = product.alternative_supplier_reference || ''
+    document.querySelector('#pAltSupplierBuy').value = num(product.alternative_purchase_price_ht) || ''
+    document.querySelector('#productAltSupplier').open = !!product.alternative_supplier
     document.querySelector('#pTop20').checked = !!product.top20_hint
     if (product.pricing_mode === 'fixed_unit') document.querySelector('#pSell').value = num(product.sale_price_ht) || ''
 
@@ -2316,6 +2333,7 @@ function openProductDialog(productId = null) {
     }
   } else {
     document.querySelector('#pPricingMode').value = 'tiered_weight'
+    document.querySelector('#productAltSupplier').open = false
     renderSubfamilyChoices()
   }
 
@@ -2370,6 +2388,10 @@ async function saveProduct() {
       : 1,
     preferred_supplier: document.querySelector('#pSupplier').value.trim() || null,
     supplier_reference: document.querySelector('#pSupplierRef').value.trim() || null,
+    alternative_supplier: document.querySelector('#pAltSupplier').value.trim() || null,
+    alternative_supplier_reference: document.querySelector('#pAltSupplierRef').value.trim() || null,
+    alternative_purchase_price_ht: document.querySelector('#pAltSupplierBuy').value.trim()
+      ? Number(document.querySelector('#pAltSupplierBuy').value) : null,
     top20_hint: document.querySelector('#pTop20').checked,
     updated_at: new Date().toISOString()
   }
@@ -2793,7 +2815,8 @@ function downloadCsv(filename, headers, rows) {
 function exportProducts() {
   const headers = [
     'sku','name','category','subfamily','active','stock_unit','pricing_mode',
-    'preferred_supplier','supplier_reference','top20_hint','stock_pending','stock_tracked',
+    'preferred_supplier','supplier_reference','alternative_supplier','alternative_supplier_reference',
+    'alternative_purchase_price_ht','top20_hint','stock_pending','stock_tracked',
     'sale_price_25g_ht','sale_price_50g_ht','sale_price_100g_ht','sale_price_200g_ht','sale_price_unit_ht',
     'sale_price_ht','sale_price_basis','purchase_unit','purchase_unit_quantity',
     'purchase_unit_stock_equivalent','stock_quantity','stock_alert_threshold',
@@ -2805,7 +2828,9 @@ function exportProducts() {
   const rows = products.map(p => [
     p.sku,p.name,categories.find(c => c.id === p.category_id)?.name || '',p.subfamily || '',
     p.active,p.stock_unit,p.pricing_mode || 'tiered_weight',
-    p.preferred_supplier || '',p.supplier_reference || '',!!p.top20_hint,!!p.stock_pending,p.stock_tracked !== false,
+    p.preferred_supplier || '',p.supplier_reference || '',
+    p.alternative_supplier || '',p.alternative_supplier_reference || '',p.alternative_purchase_price_ht ?? '',
+    !!p.top20_hint,!!p.stock_pending,p.stock_tracked !== false,
     tierValue(p.id,25),tierValue(p.id,50),tierValue(p.id,100),tierValue(p.id,200),
     p.pricing_mode === 'fixed_unit' ? p.sale_price_ht : '',
     p.sale_price_ht,p.sale_price_basis,p.purchase_unit,p.purchase_unit_quantity,
@@ -3044,6 +3069,14 @@ function analyzeProductImport(rows) {
       loyalty_reward_quantity: parseNumber(row.loyalty_reward_quantity, stockUnit === 'g' ? 100 : 1),
       preferred_supplier: String(row.preferred_supplier || '').trim() || null,
       supplier_reference: String(row.supplier_reference || '').trim() || null,
+      alternative_supplier: (row.alternative_supplier === undefined
+        ? existing?.alternative_supplier : String(row.alternative_supplier || '').trim()) || null,
+      alternative_supplier_reference: (row.alternative_supplier_reference === undefined
+        ? existing?.alternative_supplier_reference : String(row.alternative_supplier_reference || '').trim()) || null,
+      alternative_purchase_price_ht: row.alternative_purchase_price_ht === undefined ||
+        String(row.alternative_purchase_price_ht).trim() === ''
+        ? existing?.alternative_purchase_price_ht ?? null
+        : parseNumber(row.alternative_purchase_price_ht,0),
       top20_hint: parseBoolean(row.top20_hint, false),
       stock_tracked: parseBoolean(row.stock_tracked, existing?.stock_tracked !== false)
     }
@@ -3079,7 +3112,8 @@ function productChanged(existing, payload) {
     'purchase_unit_quantity','purchase_unit_stock_equivalent','stock_quantity',
     'stock_alert_threshold','stock_pending','purchase_price_ht','purchase_price_basis',
     'sale_price_ht','sale_price_basis','vat_rate_purchase','vat_rate_sale',
-    'loyalty_eligible','loyalty_reward_quantity','preferred_supplier','supplier_reference','top20_hint','stock_tracked'
+    'loyalty_eligible','loyalty_reward_quantity','preferred_supplier','supplier_reference',
+    'alternative_supplier','alternative_supplier_reference','alternative_purchase_price_ht','top20_hint','stock_tracked'
   ]
   return fields.some(field => String(existing[field] ?? '') !== String(payload[field] ?? ''))
 }
@@ -3184,6 +3218,9 @@ async function applyImport() {
         loyalty_reward_quantity:item.loyalty_reward_quantity,
         preferred_supplier:item.preferred_supplier,
         supplier_reference:item.supplier_reference,
+        alternative_supplier:item.alternative_supplier,
+        alternative_supplier_reference:item.alternative_supplier_reference,
+        alternative_purchase_price_ht:item.alternative_purchase_price_ht,
         top20_hint:item.top20_hint,
         stock_tracked:item.stock_tracked,
         tiers:item._tiers || []
