@@ -377,6 +377,32 @@ function renderShell() {
 
           <div class="card">
             <div class="search-wrap"><input id="productSearch" class="field" placeholder="Rechercher…" style="margin-bottom:10px"><button class="search-clear" type="button" data-clear="productSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
+            <details id="advancedProductFilters" class="advanced-product-filters">
+              <summary>Recherche avancée — jusqu'à 3 filtres</summary>
+              <div id="productAdvancedFilterRows">
+                ${[1,2,3].map(i => `
+                  <div class="product-filter-row" data-filter-index="${i}">
+                    <select class="field product-filter-field" aria-label="Critère de filtre ${i}">
+                      <option value="">Sans filtre</option>
+                      <option value="category">Catégorie</option>
+                      <option value="subfamily">Sous-famille</option>
+                      <option value="supplier">Fournisseur (principal ou alternatif)</option>
+                      <option value="purchase_status">Prix d'achat</option>
+                      <option value="sale_status">Prix de vente</option>
+                      <option value="stock_status">Statut du stock</option>
+                      <option value="active_status">Actif / inactif</option>
+                      <option value="top20">Top 20</option>
+                    </select>
+                    <select class="field product-filter-value" aria-label="Valeur de filtre ${i}" disabled>
+                      <option value="">Choisir un critère</option>
+                    </select>
+                  </div>`).join('')}
+              </div>
+              <div class="product-filter-footer">
+                <button id="resetProductFilters" class="secondary" type="button">Effacer les filtres</button>
+                <span id="productFilterResultCount" class="small"></span>
+              </div>
+            </details>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -1183,6 +1209,19 @@ function bindEvents() {
 
   document.querySelector('#sellSearch').oninput = renderSellProducts
   document.querySelector('#productSearch').oninput = renderProducts
+  document.querySelectorAll('.product-filter-field').forEach(select => {
+    select.onchange = () => { updateProductFilterValues(select); renderProducts() }
+  })
+  document.querySelectorAll('.product-filter-value').forEach(select => {
+    select.onchange = renderProducts
+  })
+  document.querySelector('#resetProductFilters').onclick = () => {
+    document.querySelectorAll('.product-filter-field').forEach(select => {
+      select.value = ''
+      updateProductFilterValues(select)
+    })
+    renderProducts()
+  }
   document.querySelector('#clientSearch').oninput = renderCustomers
   document.querySelector('#customerSearch').oninput = () => {
     selectedCustomer = null
@@ -1879,15 +1918,69 @@ async function completeSale() {
   await loadData()
 }
 
+const FILTER_CONSTANTS = {
+  purchase_status: [['missing','À compléter'],['complete','Renseigné']],
+  sale_status: [['missing','À compléter'],['complete','Renseigné']],
+  stock_status: [['pending','À saisir'],['tracked','Stock suivi'],['untracked','Stock non suivi']],
+  active_status: [['active','Actif'],['inactive','Inactif']],
+  top20: [['true','Top 20'],['false','Hors Top 20']]
+}
+function productAdvancedFilterOptions(field) {
+  if (FILTER_CONSTANTS[field]) return FILTER_CONSTANTS[field]
+  if (field==='category') return categories.map(c=>[c.id,c.name]).sort((a,b)=>a[1].localeCompare(b[1],'fr'))
+  if (field==='subfamily') return [...new Set(products.map(p=>p.subfamily).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'fr')).map(v=>[v,v])
+  if (field==='supplier') return [...new Set(products.flatMap(p=>[p.preferred_supplier,p.alternative_supplier]).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'fr')).map(v=>[v,v])
+  return []
+}
+function updateProductFilterValues(fieldSelect) {
+  const valueSelect = fieldSelect.closest('.product-filter-row').querySelector('.product-filter-value')
+  const current = valueSelect.value
+  const options = productAdvancedFilterOptions(fieldSelect.value)
+  valueSelect.disabled = !fieldSelect.value
+  valueSelect.innerHTML = '<option value="">Toutes les valeurs</option>' +
+    options.map(([value,label])=>`<option value="${esc(value)}">${esc(label)}</option>`).join('')
+  if (options.some(([value])=>String(value)===current)) valueSelect.value=current
+}
+function isProductSalePriceConfigured(p) {
+  if(p.pricing_mode==='free_unit') return true
+  if(p.pricing_mode==='fixed_unit') return num(p.sale_price_ht)>0
+  return tiersForProduct(p.id).length>0 || num(p.sale_price_ht)>0
+}
+function productPassesAdvancedFilters(p) {
+  const rows = [...document.querySelectorAll('.product-filter-row')]
+  return rows.every(row=>{
+    const field=row.querySelector('.product-filter-field').value
+    const value=row.querySelector('.product-filter-value').value
+    if(!field || !value) return true
+    if(field==='category') return p.category_id===value
+    if(field==='subfamily') return p.subfamily===value
+    if(field==='supplier') return [p.preferred_supplier,p.alternative_supplier].some(x=>x===value)
+    if(field==='purchase_status') return (num(p.purchase_price_ht)>0)===(value==='complete')
+    if(field==='sale_status') return isProductSalePriceConfigured(p)===(value==='complete')
+    if(field==='stock_status') return value==='untracked' ? p.stock_tracked===false :
+      value==='pending' ? p.stock_tracked!==false && !!p.stock_pending :
+      p.stock_tracked!==false && !p.stock_pending
+    if(field==='active_status') return (!!p.active)===(value==='active')
+    if(field==='top20') return (!!p.top20_hint)===(value==='true')
+    return true
+  })
+}
+
 function renderProducts() {
   const input = document.querySelector('#productSearch')
   const body = document.querySelector('#productRows')
   if (!input || !body) return
 
   const query = input.value.trim()
-  body.innerHTML = products.filter(p => matchesSearch(
-    [p.name,p.sku,p.subfamily,p.preferred_supplier,p.supplier_reference].join(' '),query
-  )).map(p => {
+  const matching = products.filter(p => matchesSearch(
+    [p.name,p.sku,p.subfamily,p.preferred_supplier,p.supplier_reference,
+     p.alternative_supplier,p.alternative_supplier_reference].join(' '),query
+  ) && productPassesAdvancedFilters(p))
+  const counter=document.querySelector('#productFilterResultCount')
+  if(counter) counter.textContent = matching.length+' produit(s) sur '+products.length
+  body.innerHTML = matching.map(p => {
     const category = categories.find(c => c.id === p.category_id)?.name || '—'
     const stock = p.stock_tracked === false ? '<span class="muted">Non suivi</span>' :
       p.stock_pending ? '<span class="muted">À saisir</span>' : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
