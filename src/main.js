@@ -2855,6 +2855,7 @@ function analyzeProductImport(rows) {
     const stockPlaceholder = stockUnit === 'g' ? 100000 : 1000
     const fixedUnitPrice = parseNumber(row.sale_price_unit_ht ?? row.fixed_unit_price,0)
     const purchasePrice = parseNumber(row.purchase_price_ht ?? row.purchase_price_ht_100g,0)
+    const existing = bySku.get(sku)
 
     const payload = {
       organization_id: organizationId,
@@ -2884,7 +2885,7 @@ function analyzeProductImport(rows) {
       preferred_supplier: String(row.preferred_supplier || '').trim() || null,
       supplier_reference: String(row.supplier_reference || '').trim() || null,
       top20_hint: parseBoolean(row.top20_hint, false),
-      stock_tracked: parseBoolean(row.stock_tracked, true)
+      stock_tracked: parseBoolean(row.stock_tracked, existing?.stock_tracked !== false)
     }
 
     const enrich = item => ({
@@ -2896,7 +2897,6 @@ function analyzeProductImport(rows) {
       return
     }
 
-    const existing = bySku.get(sku)
     if (!existing) {
       creates.push(enrich({ ...payload, _action:'Créer', _code:sku, _name:name }))
       return
