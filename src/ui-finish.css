@@ -562,3 +562,33 @@ main,
 #productDialog .house-blend-setting small{color:var(--muted);line-height:1.4;display:block}
 #clientDialog #clientDuplicateWarning{font-size:12px;line-height:1.4}
 #treasury #cashVariancePreview{line-height:1.45;font-weight:500}
+
+/* Sprint 6F — filtres produits paramétrables, discrets quand fermés */
+#products .advanced-product-filters{
+  margin:8px 0 12px;padding:9px 12px;
+  border:1px solid var(--line);border-radius:10px;background:#fdfaf6;
+}
+#products .advanced-product-filters summary{
+  cursor:pointer;font-size:13px;font-weight:650;color:#6e543c;
+  padding:2px 0;list-style-position:inside;
+}
+#products .product-filter-row{
+  display:grid;grid-template-columns:minmax(160px,1fr) minmax(160px,1.3fr);
+  gap:8px;margin-top:9px;
+}
+#products .product-filter-row .field{min-width:0;width:100%}
+#products .product-filter-footer{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;
+}
+#products #productFilterResultCount{color:var(--muted)}
+#products .advanced-product-filters:not([open]) #productAdvancedFilterRows,
+#products .advanced-product-filters:not([open]) .product-filter-footer{display:none}
+#productDialog .alternate-supplier-panel{
+  margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fdfaf6
+}
+#productDialog .alternate-supplier-panel summary{font-size:13px;font-weight:650;cursor:pointer}
+#productDialog .alternate-supplier-panel .small{line-height:1.4}
+@media(max-width:680px){
+  #products .product-filter-row{grid-template-columns:1fr}
+  #products .product-filter-footer{align-items:flex-start;flex-direction:column}
+}
