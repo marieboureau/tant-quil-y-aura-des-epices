@@ -4130,7 +4130,7 @@ function renderTopSales() {
 
 function renderLowStocks() {
   const rows = products
-    .filter(p => p.active && num(p.stock_quantity) <= num(p.stock_alert_threshold))
+    .filter(p => p.active && p.stock_tracked !== false && !p.stock_pending && num(p.stock_quantity) <= num(p.stock_alert_threshold))
     .sort((a, b) => num(a.stock_quantity) - num(b.stock_quantity))
 
   document.querySelector('#lowStockRows').innerHTML = rows.length ? rows.map(p => `
