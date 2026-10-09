@@ -9,6 +9,7 @@ let products = []
 let productPriceTiers = []
 let customers = []
 let categories = []
+let suppliers = []
 let loyaltyEvents = []
 let settings = null
 let sales = []
@@ -115,6 +116,21 @@ function restoreFormDraft() {
     updateProductPricingForm()
     updateTrackedStockForm()
   } else renderClientDuplicateHint()
+}
+
+function renderSupplierChoices(elementId, selected = '') {
+  const element = document.querySelector('#' + elementId)
+  if (!element) return
+  // Les valeurs historiques restent affichées, même si le fournisseur a été désactivé.
+  const choices = suppliers.filter(s => s.active || s.name === selected)
+    .sort((a,b) => a.name.localeCompare(b.name,'fr'))
+  let options = '<option value="">Non renseigné</option>'
+  options += choices.map(s => `<option value="${esc(s.name)}">${esc(s.name)}${s.active ? '' : ' (inactif)'}</option>`).join('')
+  if (selected && !choices.some(s => s.name === selected)) {
+    options += `<option value="${esc(selected)}">${esc(selected)} (ancien libellé — à harmoniser)</option>`
+  }
+  element.innerHTML = options
+  element.value = selected || ''
 }
 
 function renderSubfamilyChoices(selected = '') {
@@ -1097,7 +1113,7 @@ function renderShell() {
         <div class="grid product-form-grid" style="margin-top:10px">
           <div>
             <label class="small">Fournisseur principal (actuel)</label>
-            <input id="pSupplier" class="field" placeholder="Ex. Cailleau Herboristerie">
+            <select id="pSupplier" class="field" aria-label="Fournisseur principal"><option value="">Non renseigné</option></select>
           </div>
           <div>
             <label class="small">Référence fournisseur principal</label>
@@ -1108,7 +1124,7 @@ function renderShell() {
           <summary>Fournisseur alternatif (second choix)</summary>
           <div class="grid product-form-grid" style="margin-top:8px">
             <div><label class="small">Nom du fournisseur alternatif</label>
-              <input id="pAltSupplier" class="field" placeholder="Ex. Cailleau Herboristerie"></div>
+              <select id="pAltSupplier" class="field" aria-label="Fournisseur alternatif"><option value="">Non renseigné</option></select></div>
             <div><label class="small">Référence fournisseur alternatif</label>
               <input id="pAltSupplierRef" class="field" placeholder="Référence de commande"></div>
             <div><label class="small">Prix d'achat alternatif HT (€)</label>
@@ -1444,11 +1460,12 @@ async function loadData() {
   organizationId = profileRes.data.organization_id
 
   const [
-    categoriesRes, productsRes, tiersRes, customersRes, settingsRes,
+    categoriesRes, suppliersRes, productsRes, tiersRes, customersRes, settingsRes,
     loyaltyRes, salesRes, linesRes, paymentsRes, expensesRes,
     closingsRes, bankRes, rulesRes, forecastRes, remittanceBatchesRes, remittanceItemsRes
   ] = await Promise.all([
     supabase.from('product_categories').select('id,name,active,sort_order').order('sort_order'),
+    supabase.from('suppliers').select('id,name,active,organization_id').order('name'),
     supabase.from('products').select('*').order('name'),
     supabase.from('product_price_tiers').select('*').eq('active',true).order('quantity'),
     supabase.from('customers').select('*').order('display_name'),
@@ -1467,7 +1484,7 @@ async function loadData() {
   ])
 
   const error = [
-    categoriesRes.error, productsRes.error, tiersRes.error, customersRes.error, settingsRes.error,
+    categoriesRes.error, suppliersRes.error, productsRes.error, tiersRes.error, customersRes.error, settingsRes.error,
     loyaltyRes.error, salesRes.error, linesRes.error, paymentsRes.error, expensesRes.error,
     closingsRes.error, bankRes.error, rulesRes.error, forecastRes.error,
     remittanceBatchesRes.error, remittanceItemsRes.error
@@ -1476,6 +1493,7 @@ async function loadData() {
   if (error) return showGlobalError(error.message)
 
   categories = categoriesRes.data || []
+  suppliers = suppliersRes.data || []
   products = productsRes.data || []
   productPriceTiers = tiersRes.data || []
   customers = customersRes.data || []
@@ -2306,6 +2324,8 @@ function openProductDialog(productId = null) {
     .filter(c => c.active || c.id === product?.category_id)
     .map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
   document.querySelector('#pStockTracked').checked = product?.stock_tracked !== false
+  renderSupplierChoices('pSupplier',product?.preferred_supplier || '')
+  renderSupplierChoices('pAltSupplier',product?.alternative_supplier || '')
 
   ;['pName','pStock','pThreshold','pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef','pAltSupplier','pAltSupplierRef','pAltSupplierBuy']
     .forEach(id => {
@@ -2402,6 +2422,13 @@ async function saveProduct() {
 
   if (!payload.name) return msg.textContent = 'Nom obligatoire.'
   if (!payload.subfamily) return msg.textContent = 'Choisis une sous-famille.'
+  if (payload.preferred_supplier && payload.alternative_supplier === payload.preferred_supplier) {
+    return msg.textContent = 'Le fournisseur secondaire doit être différent du principal.'
+  }
+  if ([payload.preferred_supplier,payload.alternative_supplier].some(name => name &&
+      !suppliers.some(s => s.name === name))) {
+    return msg.textContent = 'Fournisseur absent du référentiel. Ajoute-le dans Paramètres.'
+  }
 
   try {
     let productId = editId
@@ -2538,6 +2565,7 @@ function saveOfflineSnapshot() {
     productPriceTiers,
     customers,
     categories,
+    suppliers,
     settings,
     loyaltyEvents
   }
@@ -2553,6 +2581,7 @@ function useOfflineSnapshot() {
   productPriceTiers = offlineSnapshot.productPriceTiers || []
   customers = offlineSnapshot.customers || []
   categories = offlineSnapshot.categories || []
+  suppliers = offlineSnapshot.suppliers || []
   settings = offlineSnapshot.settings || {}
   loyaltyEvents = offlineSnapshot.loyaltyEvents || []
   sales = []
