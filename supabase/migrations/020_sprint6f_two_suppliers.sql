@@ -181,5 +181,5 @@ begin
     'created',v_created,'updated',v_updated,'deactivated',v_deactivated
   );
 end;
-$function$
+$function$;
 
