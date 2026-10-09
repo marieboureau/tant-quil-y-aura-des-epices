@@ -986,6 +986,26 @@ function renderShell() {
             </div>
 
             <div class="card">
+              <h2>Fournisseurs</h2>
+              <p class="small muted">Référentiel partagé. Le choix du fournisseur principal et secondaire se fait ensuite dans la fiche produit.</p>
+              <div class="row" style="gap:8px;align-items:center">
+                <input id="newSupplierName" class="field" placeholder="Nom du nouveau fournisseur" maxlength="150">
+                <button id="addSupplierBtn" type="button" class="primary">Ajouter</button>
+              </div>
+              <div id="supplierMsg" class="small" role="status" style="margin-top:6px"></div>
+              <div class="table-wrap" style="margin-top:10px">
+                <table>
+                  <thead><tr><th>Fournisseur</th><th>Fiches associées</th><th>Statut</th><th>Action</th></tr></thead>
+                  <tbody id="supplierRows"></tbody>
+                </table>
+              </div>
+              <div class="small muted" style="margin-top:8px">
+                Désactiver masque le fournisseur des nouvelles sélections, sans l'effacer des produits existants.
+                Pour renommer un fournisseur, demande d'abord une harmonisation de ses fiches.
+              </div>
+            </div>
+
+            <div class="card">
               <h2>Fidélité</h2>
               <label class="small">Nombre de passages nécessaires pour obtenir un cadeau</label>
               <input id="settingLoyaltyVisits" class="field" type="number" min="1" step="1">
@@ -1424,6 +1444,10 @@ function bindEvents() {
   document.querySelector('#backupPaymentsCsvBtn').onclick = exportPayments
   document.querySelector('#refreshSettingsBtn').onclick = renderSettings
   document.querySelector('#addCategoryBtn').onclick = addCategory
+  document.querySelector('#addSupplierBtn').onclick = addSupplier
+  document.querySelector('#newSupplierName').onkeydown = event => {
+    if (event.key === 'Enter') { event.preventDefault(); addSupplier() }
+  }
   document.querySelector('#saveAppSettingsBtn').onclick = saveAppSettings
   document.querySelector('#settingsAddBankRuleBtn').onclick = addBankRuleFromSettings
 }
@@ -4829,7 +4853,71 @@ function renderSettings() {
   if (micro) micro.value = num(settings.micro_threshold)
 
   renderCategorySettings()
+  renderSupplierSettings()
   renderBankRulesInSettings()
+}
+
+function renderSupplierSettings() {
+  const body=document.querySelector('#supplierRows')
+  if (!body) return
+  const ordered=[...suppliers].sort((a,b)=>a.name.localeCompare(b.name,'fr'))
+  body.innerHTML = ordered.map(supplier => {
+    const count=products.filter(p =>
+      p.preferred_supplier===supplier.name || p.alternative_supplier===supplier.name).length
+    return `<tr>
+      <td><b>${esc(supplier.name)}</b></td>
+      <td>${count}</td>
+      <td><span class="status ${supplier.active ? 'ok':'off'}">${supplier.active ? 'Actif':'Inactif'}</span></td>
+      <td><button class="secondary toggle-supplier-btn" data-id="${esc(supplier.id)}">
+        ${supplier.active ? 'Désactiver':'Réactiver'}
+      </button></td>
+    </tr>`
+  }).join('') || '<tr><td colspan="4" class="small">Aucun fournisseur enregistré.</td></tr>'
+  body.querySelectorAll('.toggle-supplier-btn').forEach(btn => {
+    btn.onclick = () => toggleSupplier(btn.dataset.id)
+  })
+}
+
+async function addSupplier() {
+  const msg=document.querySelector('#supplierMsg')
+  const input=document.querySelector('#newSupplierName')
+  const name=input.value.replace(/\\s+/g,' ').trim()
+  if(name.length<2) { msg.textContent='Saisis un nom de fournisseur.'; return }
+  const exists=suppliers.find(x=>searchable(x.name)===searchable(name))
+  if(exists) {
+    msg.textContent= exists.active
+      ? 'Ce fournisseur existe déjà : '+exists.name
+      : 'Ce fournisseur est désactivé : utilise Réactiver dans la liste.'
+    return
+  }
+  msg.textContent='Ajout en cours…'
+  const {error}=await supabase.from('suppliers').insert({
+    organization_id:organizationId,name,active:true
+  })
+  if(error) { msg.textContent='Erreur : '+error.message; return }
+  input.value=''
+  await loadData()
+  const msgAfter=document.querySelector('#supplierMsg')
+  if(msgAfter) msgAfter.textContent='Fournisseur « '+name+' » ajouté.'
+}
+
+async function toggleSupplier(id) {
+  const supplier=suppliers.find(s=>s.id===id)
+  const msg=document.querySelector('#supplierMsg')
+  if (!supplier) return
+  const nextActive=!supplier.active
+  if(!nextActive) {
+    const n=products.filter(p=>p.preferred_supplier===supplier.name ||
+      p.alternative_supplier===supplier.name).length
+    if(n && !confirm('Ce fournisseur apparaît sur '+n+' fiche(s). Le désactiver le retirera des nouveaux choix, sans supprimer ses références. Continuer ?')) return
+  }
+  const {error}=await supabase.from('suppliers')
+    .update({active:nextActive,updated_at:new Date().toISOString()})
+    .eq('id',id).eq('organization_id',organizationId)
+  if(error) { msg.textContent='Erreur : '+error.message; return }
+  await loadData()
+  const msgAfter=document.querySelector('#supplierMsg')
+  if(msgAfter) msgAfter.textContent=supplier.name+(nextActive ? ' réactivé.' : ' désactivé.')
 }
 
 function renderCategorySettings() {
