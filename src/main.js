@@ -4881,7 +4881,7 @@ function renderSupplierSettings() {
 async function addSupplier() {
   const msg=document.querySelector('#supplierMsg')
   const input=document.querySelector('#newSupplierName')
-  const name=input.value.replace(/\\s+/g,' ').trim()
+  const name=input.value.replace(/\s+/g,' ').trim()
   if(name.length<2) { msg.textContent='Saisis un nom de fournisseur.'; return }
   const exists=suppliers.find(x=>searchable(x.name)===searchable(name))
   if(exists) {
