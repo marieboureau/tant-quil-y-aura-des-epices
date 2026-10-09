@@ -9,6 +9,7 @@ let products = []
 let productPriceTiers = []
 let customers = []
 let categories = []
+let suppliers = []
 let loyaltyEvents = []
 let settings = null
 let sales = []
@@ -18,6 +19,7 @@ let cart = []
 let selectedCustomer = null
 let paymentMode = 'card'
 let discountPercent = 0
+let discountAmountEuros = null
 let commercialGiftAmount = 0
 let pendingImport = null
 let managementExpenses = []
@@ -43,14 +45,128 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
 const fmtDateTime = value => value ? new Date(value).toLocaleString('fr-FR') : '—'
 const fmtDate = value => value ? new Date(value).toLocaleDateString('fr-FR') : '—'
 const boolLabel = value => value ? 'Oui' : 'Non'
+const searchable = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toLocaleLowerCase('fr').replace(/œ/g,'oe').replace(/æ/g,'ae')
+  .replace(/[^a-z0-9]+/g,' ').trim()
+const matchesSearch = (value, query) =>
+  searchable(query).split(' ').filter(Boolean).every(token => searchable(value).includes(token))
+
+// Sous-familles contrôlées : plus de saisie libre (et conservation des valeurs historiques à corriger).
+const SUBFAMILIES = {
+  'Cafés': ['Cafés'],
+  'Thés': ['Thé noir','Thé vert','Thé blanc','Thé blanc / vert','Thé noir / Pu-Erh','Maté','Thé','Épices / aromates'],
+  'Tisanes & rooibos': ['Tisane','Rooibos','Eau de fruits','Fleurs / infusion','Infusion / Lapacho'],
+  'Épices': ['Épices','Épices / baies','Baies','Curry','Poivres','Piments','Sels','Vanille','Épices conditionnées',"Mélanges d'épices",'Mélanges culinaires','Mélanges de poivres'],
+  'Herbes & graines': ['Herbes','Graines','Épices / graines'],
+  'Sucres': ['Sucres'],
+  'Accessoires': ['Accessoires']
+}
+
+const PRODUCT_DRAFT_FIELDS = ['pName','pCategory','pSubfamily','pPricingMode','pStock','pThreshold',
+  'pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef',
+  'pAltSupplier','pAltSupplierRef','pAltSupplierBuy','pTop20','pStockTracked']
+const CLIENT_DRAFT_FIELDS = ['cName','cVisits','cPhone','cEmail']
+function readFormDraft() {
+  try { return JSON.parse(sessionStorage.getItem('epices_form_draft') || 'null') }
+  catch { return null }
+}
+function saveFormDraft(event) {
+  const dialog = event.currentTarget
+  if (!dialog?.open) return
+  const ids = dialog.id === 'productDialog' ? PRODUCT_DRAFT_FIELDS : CLIENT_DRAFT_FIELDS
+  const data = Object.fromEntries(ids.map(id => {
+    const element = document.querySelector('#'+id)
+    return [id,element?.type === 'checkbox' ? !!element.checked : (element?.value ?? '')]
+  }))
+  sessionStorage.setItem('epices_form_draft', JSON.stringify({
+    dialogId:dialog.id,editId:dialog.dataset.editId || null,
+    updatedAt:Date.now(),data
+  }))
+}
+function restoreFormDraft() {
+  const draft = readFormDraft()
+  if (!draft) return
+  // Ne conserver un brouillon que pendant une journée et uniquement dans cet onglet.
+  if (!draft.updatedAt || Date.now()-draft.updatedAt > 24*3600*1000) {
+    sessionStorage.removeItem('epices_form_draft')
+    return
+  }
+  const dialog = document.querySelector('#'+draft.dialogId)
+  if (!dialog || dialog.open || !draft.data) return
+  if (draft.dialogId === 'productDialog') {
+    if (draft.editId && !products.some(p => p.id === draft.editId)) return
+    const btn = document.querySelector('nav button[data-tab="products"]')
+    if (btn) switchTab(btn)
+    openProductDialog(draft.editId)
+    document.querySelector('#pCategory').value = draft.data.pCategory || ''
+    renderSubfamilyChoices(draft.data.pSubfamily || '')
+  } else if (draft.dialogId === 'clientDialog') {
+    if (draft.editId && !customers.some(c => c.id === draft.editId)) return
+    const btn = document.querySelector('nav button[data-tab="clients"]')
+    if (btn) switchTab(btn)
+    openClientDialog(draft.editId)
+  } else return
+  for (const [id,value] of Object.entries(draft.data)) {
+    const element = document.querySelector('#'+id)
+    if (!element) continue
+    if (element.type === 'checkbox') element.checked = !!value
+    else element.value = value
+  }
+  if (draft.dialogId === 'productDialog') {
+    updateProductPricingForm()
+    updateTrackedStockForm()
+  } else renderClientDuplicateHint()
+}
+
+function renderSupplierChoices(elementId, selected = '') {
+  const element = document.querySelector('#' + elementId)
+  if (!element) return
+  // Les valeurs historiques restent affichées, même si le fournisseur a été désactivé.
+  const choices = suppliers.filter(s => s.active || s.name === selected)
+    .sort((a,b) => a.name.localeCompare(b.name,'fr'))
+  let options = '<option value="">Non renseigné</option>'
+  options += choices.map(s => `<option value="${esc(s.name)}">${esc(s.name)}${s.active ? '' : ' (inactif)'}</option>`).join('')
+  if (selected && !choices.some(s => s.name === selected)) {
+    options += `<option value="${esc(selected)}">${esc(selected)} (ancien libellé — à harmoniser)</option>`
+  }
+  element.innerHTML = options
+  element.value = selected || ''
+}
+
+function renderSubfamilyChoices(selected = '') {
+  const select = document.querySelector('#pSubfamily')
+  const categoryId = document.querySelector('#pCategory')?.value
+  if (!select) return
+  const categoryName = categories.find(c => c.id === categoryId)?.name || ''
+  const choices = [...(SUBFAMILIES[categoryName] || [])]
+  if (selected && !choices.includes(selected)) choices.push(selected)
+  select.innerHTML = '<option value="">Choisir une sous-famille</option>' +
+    choices.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')
+  select.value = selected && choices.includes(selected) ? selected : ''
+}
+
+function categoryColorClass(p) {
+  if (p.stock_tracked === false) return 'category-houseblend'
+  const name = categories.find(c => c.id === p.category_id)?.name || ''
+  return ({
+    'Thés':'category-tea','Tisanes & rooibos':'category-infusion',
+    'Épices':'category-spice','Herbes & graines':'category-herbs',
+    'Cafés':'category-coffee','Sucres':'category-sugar','Accessoires':'category-accessory'
+  })[name] || ''
+}
 
 async function init() {
   let initialized = false
   supabase.auth.onAuthStateChange((event, newSession) => {
+    const previousUserId = session?.user?.id
     session = newSession
     if (event === 'PASSWORD_RECOVERY') passwordRecoveryMode = true
     if (event === 'SIGNED_OUT') passwordRecoveryMode = false
-    if (initialized) render()
+    if (!initialized) return
+    // Les rafraîchissements de session ne doivent pas fermer un formulaire en cours.
+    if (event === 'TOKEN_REFRESHED' ||
+        (event === 'SIGNED_IN' && previousUserId === newSession?.user?.id && !passwordRecoveryMode)) return
+    render()
   })
 
   const { data } = await supabase.auth.getSession()
@@ -193,7 +309,7 @@ function renderShell() {
 
           <div class="grid sell-layout">
             <div class="card">
-              <input id="sellSearch" class="field" placeholder="Rechercher un produit…">
+              <div class="search-wrap"><input id="sellSearch" class="field" placeholder="Rechercher un produit…"><button class="search-clear" type="button" data-clear="sellSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
               <div id="sellProducts" class="product-grid"></div>
             </div>
 
@@ -203,7 +319,7 @@ function renderShell() {
               <div id="cartEmpty" class="muted">Touchez un produit pour l’ajouter.</div>
 
               <label class="small">Client fidélité</label>
-              <input id="customerSearch" class="field" placeholder="Rechercher un client…">
+              <div class="search-wrap"><input id="customerSearch" class="field" placeholder="Rechercher un client…"><button class="search-clear" type="button" data-clear="customerSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
               <div id="customerHints"></div>
               <div id="selectedCustomer" class="notice" style="display:none;margin-top:8px"></div>
 
@@ -239,15 +355,16 @@ function renderShell() {
                     <button type="button" class="secondary discount-btn" data-discount="5">5 %</button>
                     <button type="button" class="secondary discount-btn" data-discount="10">10 %</button>
                     <button type="button" class="secondary discount-btn" data-discount="20">20 %</button>
-                    <input id="customDiscount" class="field compact discount-custom" type="number" min="0" max="100" step="0.5" placeholder="% libre">
+                    <input id="customDiscount" class="field compact discount-custom" type="number" min="0" max="100" step="0.5" placeholder="% libre" aria-label="Remise en pourcentage">
+                    <input id="discountEuro" class="field compact discount-euro" type="number" min="0" step="0.01" placeholder="Remise €" aria-label="Remise en euros">
                   </div>
                 </div>
-                <div class="margin-panel">
-                  <div class="small">Marge ticket estimée</div>
+                <details class="margin-panel margin-compact">
+                  <summary class="small">Voir la marge estimée</summary>
                   <div class="row space"><span>Avant geste</span><b id="marginBefore">—</b></div>
                   <div class="row space"><span id="marginAfterLabel">Après remise / offert</span><b id="marginAfter">—</b></div>
                   <div id="marginHint" class="small"></div>
-                </div>
+                </details>
               </div>
 
               <div id="ticketAdjustments" class="ticket-adjustments">
@@ -276,7 +393,33 @@ function renderShell() {
           </div>
 
           <div class="card">
-            <input id="productSearch" class="field" placeholder="Rechercher…" style="margin-bottom:10px">
+            <div class="search-wrap"><input id="productSearch" class="field" placeholder="Rechercher…" style="margin-bottom:10px"><button class="search-clear" type="button" data-clear="productSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
+            <details id="advancedProductFilters" class="advanced-product-filters">
+              <summary>Recherche avancée — jusqu'à 3 filtres</summary>
+              <div id="productAdvancedFilterRows">
+                ${[1,2,3].map(i => `
+                  <div class="product-filter-row" data-filter-index="${i}">
+                    <select class="field product-filter-field" aria-label="Critère de filtre ${i}">
+                      <option value="">Sans filtre</option>
+                      <option value="category">Catégorie</option>
+                      <option value="subfamily">Sous-famille</option>
+                      <option value="supplier">Fournisseur (principal ou alternatif)</option>
+                      <option value="purchase_status">Prix d'achat</option>
+                      <option value="sale_status">Prix de vente</option>
+                      <option value="stock_status">Statut du stock</option>
+                      <option value="active_status">Actif / inactif</option>
+                      <option value="top20">Top 20</option>
+                    </select>
+                    <select class="field product-filter-value" aria-label="Valeur de filtre ${i}" disabled>
+                      <option value="">Choisir un critère</option>
+                    </select>
+                  </div>`).join('')}
+              </div>
+              <div class="product-filter-footer">
+                <button id="resetProductFilters" class="secondary" type="button">Effacer les filtres</button>
+                <span id="productFilterResultCount" class="small"></span>
+              </div>
+            </details>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -305,7 +448,7 @@ function renderShell() {
           </div>
 
           <div class="card">
-            <input id="clientSearch" class="field" placeholder="Rechercher…" style="margin-bottom:10px">
+            <div class="search-wrap"><input id="clientSearch" class="field" placeholder="Rechercher…" style="margin-bottom:10px"><button class="search-clear" type="button" data-clear="clientSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -615,15 +758,22 @@ function renderShell() {
               <label class="small">Date</label>
               <input id="closingDate" class="field" type="date">
               <div id="closingExpected" class="notice" style="margin-top:8px"></div>
+              <label class="small" style="display:block;margin-top:10px">Fonds de caisse à l'ouverture (€)</label>
+              <input id="openingCashFloat" class="field" type="number" step="0.01" min="0" placeholder="Espèces présentes avant toute vente">
+              <div class="small">Ce fonds n'est pas une vente. À renseigner pour chaque clôture.</div>
+              <label class="small" style="display:block;margin-top:10px">Ventes espèces non détaillées (€)</label>
+              <input id="unitemizedCashSales" class="field" type="number" min="0" step="0.01" placeholder="Ex. 90 € de ventes non saisies">
+              <div class="small">Ce montant est ajouté au CA encaissé et à la caisse, mais jamais au stock ni aux ventes par produit. Ne pas y ressaisir une vente figurant déjà dans Vendre.</div>
               <label class="small" style="display:block;margin-top:10px">Espèces comptées</label>
               <input id="cashCounted" class="field" type="number" step="0.01" min="0" placeholder="0,00">
+              <div id="cashVariancePreview" class="notice" style="margin-top:8px"></div>
               <label class="small" style="display:block;margin-top:10px">Note</label>
               <input id="closingNote" class="field" placeholder="Facultatif">
               <button id="saveClosingBtn" class="primary" style="margin-top:10px">Enregistrer la clôture</button>
               <div id="closingMsg" class="small" style="margin-top:6px"></div>
               <div class="table-wrap" style="margin-top:12px">
                 <table>
-                  <thead><tr><th>Date</th><th>CB</th><th>Espèces th.</th><th>Espèces comptées</th><th>Écart</th></tr></thead>
+                  <thead><tr><th>Date</th><th>CB</th><th>Fonds ouverture</th><th>Ventes espèces</th><th>Espèces non détaillées</th><th>Espèces comptées</th><th>Écart</th></tr></thead>
                   <tbody id="closingRows"></tbody>
                 </table>
               </div>
@@ -836,6 +986,26 @@ function renderShell() {
             </div>
 
             <div class="card">
+              <h2>Fournisseurs</h2>
+              <p class="small muted">Référentiel partagé. Le choix du fournisseur principal et secondaire se fait ensuite dans la fiche produit.</p>
+              <div class="row" style="gap:8px;align-items:center">
+                <input id="newSupplierName" class="field" placeholder="Nom du nouveau fournisseur" maxlength="150">
+                <button id="addSupplierBtn" type="button" class="primary">Ajouter</button>
+              </div>
+              <div id="supplierMsg" class="small" role="status" style="margin-top:6px"></div>
+              <div class="table-wrap" style="margin-top:10px">
+                <table>
+                  <thead><tr><th>Fournisseur</th><th>Fiches associées</th><th>Statut</th><th>Action</th></tr></thead>
+                  <tbody id="supplierRows"></tbody>
+                </table>
+              </div>
+              <div class="small muted" style="margin-top:8px">
+                Désactiver masque le fournisseur des nouvelles sélections, sans l'effacer des produits existants.
+                Pour renommer un fournisseur, demande d'abord une harmonisation de ses fiches.
+              </div>
+            </div>
+
+            <div class="card">
               <h2>Fidélité</h2>
               <label class="small">Nombre de passages nécessaires pour obtenir un cadeau</label>
               <input id="settingLoyaltyVisits" class="field" type="number" min="1" step="1">
@@ -926,7 +1096,7 @@ function renderShell() {
           </div>
           <div>
             <label class="small">Sous-famille</label>
-            <input id="pSubfamily" class="field" placeholder="Ex. Racines, Poivres, Thé noir">
+            <select id="pSubfamily" class="field"><option value="">Choisir une sous-famille</option></select>
           </div>
         </div>
 
@@ -938,7 +1108,11 @@ function renderShell() {
         </select>
         <div id="productPricingHelp" class="notice product-pricing-help" style="margin-top:8px"></div>
 
-        <div class="grid product-form-grid" style="margin-top:10px">
+        <label class="house-blend-setting">
+          <input id="pStockTracked" type="checkbox" checked>
+          <span><b>Suivre le stock de ce produit</b><br><small>Décocher pour un mélange maison préparé sur le banc : vente possible, sans déduction de stock ni des ingrédients.</small></span>
+        </label>
+        <div id="trackedStockBlock" class="grid product-form-grid" style="margin-top:10px">
           <div>
             <label id="pStockLabel" class="small">Stock initial (g)</label>
             <input id="pStock" type="number" class="field" min="0" placeholder="Laisser vide si stock non compté">
@@ -958,14 +1132,26 @@ function renderShell() {
 
         <div class="grid product-form-grid" style="margin-top:10px">
           <div>
-            <label class="small">Fournisseur privilégié</label>
-            <input id="pSupplier" class="field" placeholder="Ex. Cailleau Herboristerie">
+            <label class="small">Fournisseur principal (actuel)</label>
+            <select id="pSupplier" class="field" aria-label="Fournisseur principal"><option value="">Non renseigné</option></select>
           </div>
           <div>
-            <label class="small">Référence fournisseur</label>
+            <label class="small">Référence fournisseur principal</label>
             <input id="pSupplierRef" class="field" placeholder="Ex. CAM11">
           </div>
         </div>
+        <details id="productAltSupplier" class="alternate-supplier-panel">
+          <summary>Fournisseur alternatif (second choix)</summary>
+          <div class="grid product-form-grid" style="margin-top:8px">
+            <div><label class="small">Nom du fournisseur alternatif</label>
+              <select id="pAltSupplier" class="field" aria-label="Fournisseur alternatif"><option value="">Non renseigné</option></select></div>
+            <div><label class="small">Référence fournisseur alternatif</label>
+              <input id="pAltSupplierRef" class="field" placeholder="Référence de commande"></div>
+            <div><label class="small">Prix d'achat alternatif HT (€)</label>
+              <input id="pAltSupplierBuy" class="field" type="number" min="0" step="0.01" placeholder="Si connu"></div>
+          </div>
+          <div class="small">Le coût alternatif utilise la même base (100 g ou unité) que le coût principal. Aucun remplacement automatique du fournisseur ni du coût de revient.</div>
+        </details>
         <label class="row small" style="margin-top:10px;gap:8px">
           <input id="pTop20" type="checkbox">
           Produit prioritaire / Top 20
@@ -998,9 +1184,15 @@ function renderShell() {
     <dialog id="clientDialog">
       <form method="dialog" class="card dialog-card">
         <h2 id="clientDialogTitle">Nouveau client</h2>
-        <input id="cName" class="field" placeholder="Nom">
-        <input id="cPhone" class="field" placeholder="Téléphone" style="margin-top:8px">
-        <input id="cEmail" class="field" type="email" placeholder="Email" style="margin-top:8px">
+        <label class="small" for="cName">Nom et prénom</label>
+        <input id="cName" class="field" placeholder="NOM Prénom (2e prénom si homonyme)" autocomplete="off">
+        <div class="small" style="margin-top:4px">Format conseillé : NOM en majuscules, Prénom puis éventuel deuxième prénom.</div>
+        <div id="clientDuplicateWarning" class="notice" style="display:none;margin-top:6px" role="status"></div>
+        <label class="small" for="cVisits" style="display:block;margin-top:10px">Passages de fidélité enregistrés</label>
+        <input id="cVisits" class="field" type="number" min="0" max="1000000" step="1" value="0">
+        <div class="small" style="margin-top:4px">Correction possible à la hausse ou à la baisse ; modification tracée dans l'historique fidélité.</div>
+        <input id="cPhone" class="field" placeholder="Téléphone (facultatif)" style="margin-top:8px">
+        <input id="cEmail" class="field" type="email" placeholder="Email (facultatif)" style="margin-top:8px">
         <div class="row" style="justify-content:flex-end;margin-top:14px">
           <button value="cancel" class="secondary">Annuler</button>
           <button id="saveClientBtn" type="button" class="primary">Enregistrer</button>
@@ -1055,30 +1247,76 @@ function renderShell() {
   `
 
   bindEvents()
+  const rememberedTab = sessionStorage.getItem('epices_active_tab')
+  const rememberedButton = rememberedTab && document.querySelector('nav button[data-tab="' + rememberedTab + '"]')
+  if (rememberedButton && rememberedTab !== 'sell') switchTab(rememberedButton)
 }
 
 function bindEvents() {
-  document.querySelector('#logoutBtn').onclick = () => supabase.auth.signOut()
+  document.querySelector('#logoutBtn').onclick = () => {
+    sessionStorage.removeItem('epices_active_tab')
+    supabase.auth.signOut()
+  }
   document.querySelectorAll('nav button').forEach(btn => btn.onclick = () => switchTab(btn))
 
   document.querySelector('#sellSearch').oninput = renderSellProducts
   document.querySelector('#productSearch').oninput = renderProducts
+  document.querySelectorAll('.product-filter-field').forEach(select => {
+    select.onchange = () => { updateProductFilterValues(select); renderProducts() }
+  })
+  document.querySelectorAll('.product-filter-value').forEach(select => {
+    select.onchange = renderProducts
+  })
+  document.querySelector('#resetProductFilters').onclick = () => {
+    document.querySelectorAll('.product-filter-field').forEach(select => {
+      select.value = ''
+      updateProductFilterValues(select)
+    })
+    renderProducts()
+  }
   document.querySelector('#clientSearch').oninput = renderCustomers
-  document.querySelector('#customerSearch').oninput = renderCustomerHints
+  document.querySelector('#customerSearch').oninput = () => {
+    selectedCustomer = null
+    document.querySelector('#selectedCustomer').style.display = 'none'
+    renderCustomerHints()
+  }
+  document.querySelectorAll('.search-clear').forEach(button => {
+    button.onclick = () => {
+      const input = document.querySelector('#' + button.dataset.clear)
+      if (!input) return
+      input.value = ''
+      input.dispatchEvent(new Event('input', { bubbles:true }))
+      input.focus()
+    }
+  })
   document.querySelector('#paymentFilter').onchange = renderPayments
 
   document.querySelector('#addProductBtn').onclick = () => openProductDialog()
   document.querySelector('#addClientBtn').onclick = () => openClientDialog()
   document.querySelector('#saveProductBtn').onclick = saveProduct
   document.querySelector('#pPricingMode').onchange = updateProductPricingForm
+  document.querySelector('#pCategory').onchange = () => renderSubfamilyChoices()
+  document.querySelector('#pStockTracked').onchange = updateTrackedStockForm
   document.querySelector('#saveClientBtn').onclick = saveCustomer
+  document.querySelector('#cName').oninput = renderClientDuplicateHint
+  for (const id of ['productDialog','clientDialog']) {
+    const dialog = document.querySelector('#'+id)
+    dialog.addEventListener('input', saveFormDraft)
+    dialog.addEventListener('change', saveFormDraft)
+    dialog.addEventListener('close', () => {
+      const draft = readFormDraft()
+      if (draft?.dialogId === id) sessionStorage.removeItem('epices_form_draft')
+    })
+  }
   document.querySelector('#validateSale').onclick = completeSale
   document.querySelector('#saveLoyaltyBtn').onclick = saveLoyaltySettings
 
   document.querySelectorAll('.discount-btn').forEach(btn => btn.onclick = () => {
     discountPercent = Number(btn.dataset.discount || 0)
+    discountAmountEuros = null
     document.querySelectorAll('.discount-btn').forEach(x => x.classList.toggle('active', x === btn))
     document.querySelector('#customDiscount').value = ''
+    document.querySelector('#discountEuro').value = ''
     if (paymentMode === 'gift' && document.querySelector('#mixedBox').style.display === 'none') {
       commercialGiftAmount = ticketAfterDiscountHt()
     }
@@ -1086,7 +1324,21 @@ function bindEvents() {
   })
   document.querySelector('#customDiscount').oninput = event => {
     discountPercent = Math.max(0, Math.min(100, Number(event.target.value || 0)))
+    discountAmountEuros = null
+    document.querySelector('#discountEuro').value = ''
     document.querySelectorAll('.discount-btn').forEach(x => x.classList.remove('active'))
+    if (paymentMode === 'gift' && document.querySelector('#mixedBox').style.display === 'none') {
+      commercialGiftAmount = ticketAfterDiscountHt()
+    }
+    renderCart()
+  }
+
+  document.querySelector('#discountEuro').oninput = event => {
+    const value = event.target.value.trim()
+    discountAmountEuros = value === '' ? null : Math.max(0, Number(value) || 0)
+    discountPercent = 0
+    document.querySelector('#customDiscount').value = ''
+    document.querySelectorAll('.discount-btn').forEach(x => x.classList.toggle('active', discountAmountEuros === null && x.dataset.discount === '0'))
     if (paymentMode === 'gift' && document.querySelector('#mixedBox').style.display === 'none') {
       commercialGiftAmount = ticketAfterDiscountHt()
     }
@@ -1173,6 +1425,9 @@ function bindEvents() {
   document.querySelector('#addExpenseBtn').onclick = addManagementExpense
   document.querySelector('#refreshTreasuryBtn').onclick = loadData
   document.querySelector('#closingDate').onchange = renderClosingExpected
+  document.querySelector('#openingCashFloat').oninput = renderCashClosingPreview
+  document.querySelector('#unitemizedCashSales').oninput = renderCashClosingPreview
+  document.querySelector('#cashCounted').oninput = renderCashClosingPreview
   document.querySelector('#saveClosingBtn').onclick = saveCashClosing
   document.querySelector('#saveBankBalanceBtn').onclick = saveBankBalance
   document.querySelector('#bankCsvInput').onchange = event => importBankCsv(event.target.files?.[0])
@@ -1189,6 +1444,10 @@ function bindEvents() {
   document.querySelector('#backupPaymentsCsvBtn').onclick = exportPayments
   document.querySelector('#refreshSettingsBtn').onclick = renderSettings
   document.querySelector('#addCategoryBtn').onclick = addCategory
+  document.querySelector('#addSupplierBtn').onclick = addSupplier
+  document.querySelector('#newSupplierName').onkeydown = event => {
+    if (event.key === 'Enter') { event.preventDefault(); addSupplier() }
+  }
   document.querySelector('#saveAppSettingsBtn').onclick = saveAppSettings
   document.querySelector('#settingsAddBankRuleBtn').onclick = addBankRuleFromSettings
 }
@@ -1198,6 +1457,7 @@ function switchTab(btn) {
   btn.classList.add('active')
   document.querySelectorAll('.section').forEach(x => x.classList.remove('active'))
   const tab = btn.dataset.tab
+  sessionStorage.setItem('epices_active_tab', tab)
   document.querySelector('#' + tab).classList.add('active')
 
   // Rendu à l'ouverture : évite un écran vide si un autre panneau a rencontré une erreur auparavant.
@@ -1224,11 +1484,12 @@ async function loadData() {
   organizationId = profileRes.data.organization_id
 
   const [
-    categoriesRes, productsRes, tiersRes, customersRes, settingsRes,
+    categoriesRes, suppliersRes, productsRes, tiersRes, customersRes, settingsRes,
     loyaltyRes, salesRes, linesRes, paymentsRes, expensesRes,
     closingsRes, bankRes, rulesRes, forecastRes, remittanceBatchesRes, remittanceItemsRes
   ] = await Promise.all([
     supabase.from('product_categories').select('id,name,active,sort_order').order('sort_order'),
+    supabase.from('suppliers').select('id,name,active,organization_id').order('name'),
     supabase.from('products').select('*').order('name'),
     supabase.from('product_price_tiers').select('*').eq('active',true).order('quantity'),
     supabase.from('customers').select('*').order('display_name'),
@@ -1247,7 +1508,7 @@ async function loadData() {
   ])
 
   const error = [
-    categoriesRes.error, productsRes.error, tiersRes.error, customersRes.error, settingsRes.error,
+    categoriesRes.error, suppliersRes.error, productsRes.error, tiersRes.error, customersRes.error, settingsRes.error,
     loyaltyRes.error, salesRes.error, linesRes.error, paymentsRes.error, expensesRes.error,
     closingsRes.error, bankRes.error, rulesRes.error, forecastRes.error,
     remittanceBatchesRes.error, remittanceItemsRes.error
@@ -1256,6 +1517,7 @@ async function loadData() {
   if (error) return showGlobalError(error.message)
 
   categories = categoriesRes.data || []
+  suppliers = suppliersRes.data || []
   products = productsRes.data || []
   productPriceTiers = tiersRes.data || []
   customers = customersRes.data || []
@@ -1273,6 +1535,7 @@ async function loadData() {
   remittanceItems = remittanceItemsRes.data || []
 
   renderAll()
+  restoreFormDraft()
 }
 
 function renderAll() {
@@ -1360,7 +1623,15 @@ function ticketGrossHt() {
 }
 
 function ticketDiscountHt() {
-  return Number((ticketGrossHt() * discountPercent / 100).toFixed(2))
+  const gross = ticketGrossHt()
+  if (discountAmountEuros !== null) return Math.min(gross, Math.max(0,Number(discountAmountEuros.toFixed(2))))
+  return Number((gross * discountPercent / 100).toFixed(2))
+}
+
+function effectiveDiscountPercent() {
+  const gross = ticketGrossHt()
+  return discountAmountEuros === null ? discountPercent
+    : gross > 0 ? Number((ticketDiscountHt() / gross * 100).toFixed(8)) : 0
 }
 
 function ticketAfterDiscountHt() {
@@ -1432,17 +1703,17 @@ function productPopularityMap() {
 
 function productCardHtml(p, isTop = false) {
   const noTariff = p.pricing_mode === 'tiered_weight' && !tiersForProduct(p.id).length && !(num(p.sale_price_ht)>0)
-  const stockLabel = p.stock_pending
+  const stockLabel = p.stock_tracked === false ? 'Mélange maison · stock non suivi' : p.stock_pending
     ? 'Stock à saisir'
     : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
   return `
-    <button class="product-card ${isTop ? 'top-product' : ''} ${noTariff ? 'tariff-missing' : ''}" data-id="${p.id}">
+    <button class="product-card ${categoryColorClass(p)} ${isTop ? 'top-product' : ''} ${noTariff ? 'tariff-missing' : ''}" data-id="${p.id}">
       <div class="row space product-card-title">
         <b>${esc(p.name)}</b>
         ${isTop ? '<span class="top-product-badge">Top</span>' : ''}
       </div>
       <span>${productPriceSummary(p)}</span>
-      <small class="${!p.stock_pending && num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
+      <small class="${p.stock_tracked !== false && !p.stock_pending && num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
         ${stockLabel}
       </small>
     </button>
@@ -1454,10 +1725,10 @@ function renderSellProducts() {
   const container = document.querySelector('#sellProducts')
   if (!input || !container) return
 
-  const query = input.value.toLowerCase().trim()
+  const query = input.value.trim()
   const popularity = productPopularityMap()
   const filtered = activeProducts()
-    .filter(p => p.name.toLowerCase().includes(query) || String(p.sku || '').toLowerCase().includes(query))
+    .filter(p => matchesSearch([p.name,p.sku,p.subfamily].join(' '),query))
     .sort((a,b) => {
       const featured = Number(!!b.top20_hint)-Number(!!a.top20_hint)
       if (featured) return featured
@@ -1584,12 +1855,10 @@ function renderCustomerHints() {
   const container = document.querySelector('#customerHints')
   if (!input || !container) return
 
-  const query = input.value.toLowerCase().trim()
+  const query = input.value.trim()
   container.innerHTML = query
-    ? customers.filter(c => c.active && (
-        c.display_name.toLowerCase().includes(query) ||
-        String(c.customer_code || '').toLowerCase().includes(query)
-      )).slice(0, 8).map(c =>
+    ? customers.filter(c => c.active &&
+        matchesSearch([c.display_name,c.customer_code,c.phone,c.email].join(' '),query)).slice(0, 8).map(c =>
         `<button class="hint" data-id="${c.id}">${esc(c.display_name)} <span class="muted">${esc(c.customer_code || '')}</span></button>`
       ).join('')
     : ''
@@ -1619,7 +1888,7 @@ async function completeSale() {
   for (const item of cart) {
     const product = products.find(p => p.id === item.id)
     if (!product) return msg.textContent = 'Produit introuvable.'
-    if (item.qty > num(product.stock_quantity)) {
+    if (product.stock_tracked !== false && item.qty > num(product.stock_quantity)) {
       return msg.textContent = `Stock insuffisant pour ${product.name}.`
     }
   }
@@ -1664,7 +1933,7 @@ async function completeSale() {
       ...(item.lineNote ? { line_note:item.lineNote } : {})
     })),
     payments: payRows,
-    discount_percent: discountPercent,
+    discount_percent: effectiveDiscountPercent(),
     commercial_gift_amount: gift,
     note: gift > 0 ? 'Vente avec geste commercial offert' : null,
     total
@@ -1708,21 +1977,72 @@ async function completeSale() {
   await loadData()
 }
 
+const FILTER_CONSTANTS = {
+  purchase_status: [['missing','À compléter'],['complete','Renseigné']],
+  sale_status: [['missing','À compléter'],['complete','Renseigné']],
+  stock_status: [['pending','À saisir'],['tracked','Stock suivi'],['untracked','Stock non suivi']],
+  active_status: [['active','Actif'],['inactive','Inactif']],
+  top20: [['true','Top 20'],['false','Hors Top 20']]
+}
+function productAdvancedFilterOptions(field) {
+  if (FILTER_CONSTANTS[field]) return FILTER_CONSTANTS[field]
+  if (field==='category') return categories.map(c=>[c.id,c.name]).sort((a,b)=>a[1].localeCompare(b[1],'fr'))
+  if (field==='subfamily') return [...new Set(products.map(p=>p.subfamily).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'fr')).map(v=>[v,v])
+  if (field==='supplier') return [...new Set(products.flatMap(p=>[p.preferred_supplier,p.alternative_supplier]).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'fr')).map(v=>[v,v])
+  return []
+}
+function updateProductFilterValues(fieldSelect) {
+  const valueSelect = fieldSelect.closest('.product-filter-row').querySelector('.product-filter-value')
+  const current = valueSelect.value
+  const options = productAdvancedFilterOptions(fieldSelect.value)
+  valueSelect.disabled = !fieldSelect.value
+  valueSelect.innerHTML = '<option value="">Toutes les valeurs</option>' +
+    options.map(([value,label])=>`<option value="${esc(value)}">${esc(label)}</option>`).join('')
+  if (options.some(([value])=>String(value)===current)) valueSelect.value=current
+}
+function isProductSalePriceConfigured(p) {
+  if(p.pricing_mode==='free_unit') return true
+  if(p.pricing_mode==='fixed_unit') return num(p.sale_price_ht)>0
+  return tiersForProduct(p.id).length>0 || num(p.sale_price_ht)>0
+}
+function productPassesAdvancedFilters(p) {
+  const rows = [...document.querySelectorAll('.product-filter-row')]
+  return rows.every(row=>{
+    const field=row.querySelector('.product-filter-field').value
+    const value=row.querySelector('.product-filter-value').value
+    if(!field || !value) return true
+    if(field==='category') return p.category_id===value
+    if(field==='subfamily') return p.subfamily===value
+    if(field==='supplier') return [p.preferred_supplier,p.alternative_supplier].some(x=>x===value)
+    if(field==='purchase_status') return (num(p.purchase_price_ht)>0)===(value==='complete')
+    if(field==='sale_status') return isProductSalePriceConfigured(p)===(value==='complete')
+    if(field==='stock_status') return value==='untracked' ? p.stock_tracked===false :
+      value==='pending' ? p.stock_tracked!==false && !!p.stock_pending :
+      p.stock_tracked!==false && !p.stock_pending
+    if(field==='active_status') return (!!p.active)===(value==='active')
+    if(field==='top20') return (!!p.top20_hint)===(value==='true')
+    return true
+  })
+}
+
 function renderProducts() {
   const input = document.querySelector('#productSearch')
   const body = document.querySelector('#productRows')
   if (!input || !body) return
 
-  const query = input.value.toLowerCase().trim()
-  body.innerHTML = products.filter(p =>
-    p.name.toLowerCase().includes(query) ||
-    String(p.sku || '').toLowerCase().includes(query) ||
-    String(p.subfamily || '').toLowerCase().includes(query) ||
-    String(p.preferred_supplier || '').toLowerCase().includes(query) ||
-    String(p.supplier_reference || '').toLowerCase().includes(query)
-  ).map(p => {
+  const query = input.value.trim()
+  const matching = products.filter(p => matchesSearch(
+    [p.name,p.sku,p.subfamily,p.preferred_supplier,p.supplier_reference,
+     p.alternative_supplier,p.alternative_supplier_reference].join(' '),query
+  ) && productPassesAdvancedFilters(p))
+  const counter=document.querySelector('#productFilterResultCount')
+  if(counter) counter.textContent = matching.length+' produit(s) sur '+products.length
+  body.innerHTML = matching.map(p => {
     const category = categories.find(c => c.id === p.category_id)?.name || '—'
-    const stock = p.stock_pending ? '<span class="muted">À saisir</span>' : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
+    const stock = p.stock_tracked === false ? '<span class="muted">Non suivi</span>' :
+      p.stock_pending ? '<span class="muted">À saisir</span>' : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
     return `
       <tr>
         <td>${esc(p.sku || '—')}</td>
@@ -1730,9 +2050,9 @@ function renderProducts() {
         <td>${esc(category)}</td>
         <td>${esc(p.subfamily || '—')}</td>
         <td>${stock}</td>
-        <td>${esc(p.preferred_supplier || '—')}</td>
-        <td>${esc(p.supplier_reference || '—')}</td>
-        <td>${num(p.purchase_price_ht)>0 ? eur(p.purchase_price_ht) : '—'}</td>
+        <td>${esc(p.preferred_supplier || '—')}${p.alternative_supplier ? `<div class="small muted">Alternative : ${esc(p.alternative_supplier)}</div>` : ''}</td>
+        <td>${esc(p.supplier_reference || '—')}${p.alternative_supplier_reference ? `<div class="small muted">Alt. : ${esc(p.alternative_supplier_reference)}</div>` : ''}</td>
+        <td>${num(p.purchase_price_ht)>0 ? eur(p.purchase_price_ht) : '—'}${num(p.alternative_purchase_price_ht)>0 ? `<div class="small muted">Alt. : ${eur(p.alternative_purchase_price_ht)}</div>` : ''}</td>
         <td><span class="small">${productPriceSummary(p)}</span></td>
         <td>${boolLabel(p.loyalty_eligible)}</td>
         <td><span class="status ${p.active ? 'ok' : 'off'}">${p.active ? 'Actif' : 'Inactif'}</span></td>
@@ -1770,14 +2090,11 @@ function renderCustomers() {
   const body = document.querySelector('#clientRows')
   if (!input || !body) return
 
-  const query = input.value.toLowerCase().trim()
+  const query = input.value.trim()
 
-  body.innerHTML = customers.filter(c =>
-    c.display_name.toLowerCase().includes(query) ||
-    String(c.customer_code || '').toLowerCase().includes(query) ||
-    String(c.phone || '').toLowerCase().includes(query) ||
-    String(c.email || '').toLowerCase().includes(query)
-  ).map(c => {
+  body.innerHTML = customers.filter(c => matchesSearch(
+    [c.display_name,c.customer_code,c.phone,c.email].join(' '),query
+  )).map(c => {
     const info = loyaltyInfo(c.id)
     return `
       <tr>
@@ -1984,6 +2301,12 @@ async function confirmCancelSale() {
   await loadData()
 }
 
+function updateTrackedStockForm() {
+  const tracked = document.querySelector('#pStockTracked')?.checked !== false
+  const block = document.querySelector('#trackedStockBlock')
+  if (block) block.style.display = tracked ? '' : 'none'
+}
+
 function updateProductPricingForm() {
   const mode = document.querySelector('#pPricingMode')?.value || 'tiered_weight'
   const weighted = mode === 'tiered_weight'
@@ -2024,8 +2347,11 @@ function openProductDialog(productId = null) {
   document.querySelector('#pCategory').innerHTML = categories
     .filter(c => c.active || c.id === product?.category_id)
     .map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
+  document.querySelector('#pStockTracked').checked = product?.stock_tracked !== false
+  renderSupplierChoices('pSupplier',product?.preferred_supplier || '')
+  renderSupplierChoices('pAltSupplier',product?.alternative_supplier || '')
 
-  ;['pName','pSubfamily','pStock','pThreshold','pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef']
+  ;['pName','pStock','pThreshold','pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef','pAltSupplier','pAltSupplierRef','pAltSupplierBuy']
     .forEach(id => {
       const el = document.querySelector('#'+id)
       if (el) el.value = ''
@@ -2035,13 +2361,17 @@ function openProductDialog(productId = null) {
   if (product) {
     document.querySelector('#pName').value = product.name || ''
     document.querySelector('#pCategory').value = product.category_id || ''
-    document.querySelector('#pSubfamily').value = product.subfamily || ''
+    renderSubfamilyChoices(product.subfamily || '')
     document.querySelector('#pPricingMode').value = product.pricing_mode || 'tiered_weight'
     document.querySelector('#pStock').value = product.stock_pending ? '' : num(product.stock_quantity)
     document.querySelector('#pThreshold').value = num(product.stock_alert_threshold)
     document.querySelector('#pBuy').value = num(product.purchase_price_ht) || ''
     document.querySelector('#pSupplier').value = product.preferred_supplier || ''
     document.querySelector('#pSupplierRef').value = product.supplier_reference || ''
+    document.querySelector('#pAltSupplier').value = product.alternative_supplier || ''
+    document.querySelector('#pAltSupplierRef').value = product.alternative_supplier_reference || ''
+    document.querySelector('#pAltSupplierBuy').value = num(product.alternative_purchase_price_ht) || ''
+    document.querySelector('#productAltSupplier').open = !!product.alternative_supplier
     document.querySelector('#pTop20').checked = !!product.top20_hint
     if (product.pricing_mode === 'fixed_unit') document.querySelector('#pSell').value = num(product.sale_price_ht) || ''
 
@@ -2051,10 +2381,13 @@ function openProductDialog(productId = null) {
     }
   } else {
     document.querySelector('#pPricingMode').value = 'tiered_weight'
+    document.querySelector('#productAltSupplier').open = false
+    renderSubfamilyChoices()
   }
 
   document.querySelector('#productMsg').textContent = ''
   updateProductPricingForm()
+  updateTrackedStockForm()
   dialog.showModal()
 }
 
@@ -2083,7 +2416,8 @@ async function saveProduct() {
     organization_id: organizationId,
     name: document.querySelector('#pName').value.trim(),
     category_id: document.querySelector('#pCategory').value || null,
-    subfamily: document.querySelector('#pSubfamily').value.trim() || null,
+    subfamily: document.querySelector('#pSubfamily').value || null,
+    stock_tracked: document.querySelector('#pStockTracked').checked,
     pricing_mode: pricingMode,
     stock_unit: stockUnit,
     purchase_unit: stockUnit === 'g' ? 'sachet' : 'unité',
@@ -2102,11 +2436,23 @@ async function saveProduct() {
       : 1,
     preferred_supplier: document.querySelector('#pSupplier').value.trim() || null,
     supplier_reference: document.querySelector('#pSupplierRef').value.trim() || null,
+    alternative_supplier: document.querySelector('#pAltSupplier').value.trim() || null,
+    alternative_supplier_reference: document.querySelector('#pAltSupplierRef').value.trim() || null,
+    alternative_purchase_price_ht: document.querySelector('#pAltSupplierBuy').value.trim()
+      ? Number(document.querySelector('#pAltSupplierBuy').value) : null,
     top20_hint: document.querySelector('#pTop20').checked,
     updated_at: new Date().toISOString()
   }
 
   if (!payload.name) return msg.textContent = 'Nom obligatoire.'
+  if (!payload.subfamily) return msg.textContent = 'Choisis une sous-famille.'
+  if (payload.preferred_supplier && payload.alternative_supplier === payload.preferred_supplier) {
+    return msg.textContent = 'Le fournisseur secondaire doit être différent du principal.'
+  }
+  if ([payload.preferred_supplier,payload.alternative_supplier].some(name => name &&
+      !suppliers.some(s => s.name === name))) {
+    return msg.textContent = 'Fournisseur absent du référentiel. Ajoute-le dans Paramètres.'
+  }
 
   try {
     let productId = editId
@@ -2121,6 +2467,7 @@ async function saveProduct() {
     }
 
     await syncProductTiers(productId, pricingMode === 'tiered_weight' ? tiers : [])
+    sessionStorage.removeItem('epices_form_draft')
     dialog.close()
     await loadData()
   } catch (error) {
@@ -2136,8 +2483,27 @@ function openClientDialog(customerId = null) {
   document.querySelector('#cName').value = customer?.display_name || ''
   document.querySelector('#cPhone').value = customer?.phone || ''
   document.querySelector('#cEmail').value = customer?.email || ''
+  document.querySelector('#cVisits').value = customer ? loyaltyInfo(customer.id).visits : 0
+  document.querySelector('#clientDuplicateWarning').style.display = 'none'
   document.querySelector('#clientMsg').textContent = ''
   dialog.showModal()
+}
+
+function renderClientDuplicateHint() {
+  const name = document.querySelector('#cName').value.trim()
+  const currentId = document.querySelector('#clientDialog').dataset.editId
+  const box = document.querySelector('#clientDuplicateWarning')
+  if (name.length < 3) {
+    box.style.display='none'
+    return
+  }
+  const matches = customers.filter(c => c.id !== currentId && matchesSearch(c.display_name,name)).slice(0,4)
+  box.style.display = matches.length ? 'block' : 'none'
+  if (matches.length) {
+    box.textContent = 'Client(s) similaire(s) déjà présent(s) : ' +
+      matches.map(c => c.display_name + (c.phone ? ' — ' + c.phone : '')).join(' ; ') +
+      '. Vérifie avant de créer un homonyme ; utilise un deuxième prénom ou le téléphone pour les distinguer.'
+  }
 }
 
 async function saveCustomer() {
@@ -2145,23 +2511,25 @@ async function saveCustomer() {
   const msg = document.querySelector('#clientMsg')
   msg.textContent = ''
 
-  const editId = dialog.dataset.editId || null
   const name = document.querySelector('#cName').value.trim()
-  if (!name) return msg.textContent = 'Nom obligatoire.'
-
-  const payload = {
-    display_name: name,
-    phone: document.querySelector('#cPhone').value.trim() || null,
-    email: document.querySelector('#cEmail').value.trim() || null,
-    updated_at: new Date().toISOString()
+  const rawVisits = document.querySelector('#cVisits').value.trim()
+  if (!name) return msg.textContent = 'Nom et prénom obligatoires.'
+  if (!/^\d+$/.test(rawVisits) || Number(rawVisits) > 1000000) {
+    return msg.textContent = 'Nombre de passages entier et positif requis.'
   }
+  const btn = document.querySelector('#saveClientBtn')
+  btn.disabled = true
+  const {error} = await supabase.rpc('save_customer_with_visits', {
+    p_customer_id: dialog.dataset.editId || null,
+    p_display_name: name,
+    p_phone: document.querySelector('#cPhone').value.trim(),
+    p_email: document.querySelector('#cEmail').value.trim(),
+    p_visits: Number(rawVisits)
+  })
+  btn.disabled = false
+  if (error) return msg.textContent = 'Erreur : ' + error.message
 
-  const result = editId
-    ? await supabase.from('customers').update(payload).eq('id',editId)
-    : await supabase.from('customers').insert({ organization_id:organizationId, ...payload })
-
-  if (result.error) return msg.textContent = result.error.message
-
+  sessionStorage.removeItem('epices_form_draft')
   dialog.close()
   await loadData()
 }
@@ -2187,10 +2555,12 @@ function clearSaleForm() {
   if (mixCheque) mixCheque.value = ''
   if (mixGift) mixGift.value = ''
   discountPercent = 0
+  discountAmountEuros = null
   commercialGiftAmount = 0
   paymentMode = 'card'
   document.querySelectorAll('.discount-btn').forEach(x => x.classList.toggle('active', x.dataset.discount === '0'))
   if (document.querySelector('#customDiscount')) document.querySelector('#customDiscount').value = ''
+  if (document.querySelector('#discountEuro')) document.querySelector('#discountEuro').value = ''
   document.querySelectorAll('.pay').forEach(x => x.classList.toggle('active', x.dataset.pay === 'card'))
   if (document.querySelector('#mixedBox')) document.querySelector('#mixedBox').style.display = 'none'
   renderCart()
@@ -2219,6 +2589,7 @@ function saveOfflineSnapshot() {
     productPriceTiers,
     customers,
     categories,
+    suppliers,
     settings,
     loyaltyEvents
   }
@@ -2234,6 +2605,7 @@ function useOfflineSnapshot() {
   productPriceTiers = offlineSnapshot.productPriceTiers || []
   customers = offlineSnapshot.customers || []
   categories = offlineSnapshot.categories || []
+  suppliers = offlineSnapshot.suppliers || []
   settings = offlineSnapshot.settings || {}
   loyaltyEvents = offlineSnapshot.loyaltyEvents || []
   sales = []
@@ -2257,7 +2629,7 @@ function queueOfflineSale(payload) {
 function applyOfflineSaleLocally(payload) {
   for (const line of payload.lines) {
     const product = products.find(p => p.id === line.product_id)
-    if (product) product.stock_quantity = num(product.stock_quantity) - num(line.quantity)
+    if (product && product.stock_tracked !== false) product.stock_quantity = num(product.stock_quantity) - num(line.quantity)
   }
 
   if (payload.customer_id) {
@@ -2500,7 +2872,8 @@ function downloadCsv(filename, headers, rows) {
 function exportProducts() {
   const headers = [
     'sku','name','category','subfamily','active','stock_unit','pricing_mode',
-    'preferred_supplier','supplier_reference','top20_hint','stock_pending',
+    'preferred_supplier','supplier_reference','alternative_supplier','alternative_supplier_reference',
+    'alternative_purchase_price_ht','top20_hint','stock_pending','stock_tracked',
     'sale_price_25g_ht','sale_price_50g_ht','sale_price_100g_ht','sale_price_200g_ht','sale_price_unit_ht',
     'sale_price_ht','sale_price_basis','purchase_unit','purchase_unit_quantity',
     'purchase_unit_stock_equivalent','stock_quantity','stock_alert_threshold',
@@ -2512,7 +2885,9 @@ function exportProducts() {
   const rows = products.map(p => [
     p.sku,p.name,categories.find(c => c.id === p.category_id)?.name || '',p.subfamily || '',
     p.active,p.stock_unit,p.pricing_mode || 'tiered_weight',
-    p.preferred_supplier || '',p.supplier_reference || '',!!p.top20_hint,!!p.stock_pending,
+    p.preferred_supplier || '',p.supplier_reference || '',
+    p.alternative_supplier || '',p.alternative_supplier_reference || '',p.alternative_purchase_price_ht ?? '',
+    !!p.top20_hint,!!p.stock_pending,p.stock_tracked !== false,
     tierValue(p.id,25),tierValue(p.id,50),tierValue(p.id,100),tierValue(p.id,200),
     p.pricing_mode === 'fixed_unit' ? p.sale_price_ht : '',
     p.sale_price_ht,p.sale_price_basis,p.purchase_unit,p.purchase_unit_quantity,
@@ -2722,6 +3097,7 @@ function analyzeProductImport(rows) {
     const stockPlaceholder = stockUnit === 'g' ? 100000 : 1000
     const fixedUnitPrice = parseNumber(row.sale_price_unit_ht ?? row.fixed_unit_price,0)
     const purchasePrice = parseNumber(row.purchase_price_ht ?? row.purchase_price_ht_100g,0)
+    const existing = bySku.get(sku)
 
     const payload = {
       organization_id: organizationId,
@@ -2750,7 +3126,16 @@ function analyzeProductImport(rows) {
       loyalty_reward_quantity: parseNumber(row.loyalty_reward_quantity, stockUnit === 'g' ? 100 : 1),
       preferred_supplier: String(row.preferred_supplier || '').trim() || null,
       supplier_reference: String(row.supplier_reference || '').trim() || null,
-      top20_hint: parseBoolean(row.top20_hint, false)
+      alternative_supplier: (row.alternative_supplier === undefined
+        ? existing?.alternative_supplier : String(row.alternative_supplier || '').trim()) || null,
+      alternative_supplier_reference: (row.alternative_supplier_reference === undefined
+        ? existing?.alternative_supplier_reference : String(row.alternative_supplier_reference || '').trim()) || null,
+      alternative_purchase_price_ht: row.alternative_purchase_price_ht === undefined ||
+        String(row.alternative_purchase_price_ht).trim() === ''
+        ? existing?.alternative_purchase_price_ht ?? null
+        : parseNumber(row.alternative_purchase_price_ht,0),
+      top20_hint: parseBoolean(row.top20_hint, false),
+      stock_tracked: parseBoolean(row.stock_tracked, existing?.stock_tracked !== false)
     }
 
     const enrich = item => ({
@@ -2762,7 +3147,6 @@ function analyzeProductImport(rows) {
       return
     }
 
-    const existing = bySku.get(sku)
     if (!existing) {
       creates.push(enrich({ ...payload, _action:'Créer', _code:sku, _name:name }))
       return
@@ -2785,7 +3169,8 @@ function productChanged(existing, payload) {
     'purchase_unit_quantity','purchase_unit_stock_equivalent','stock_quantity',
     'stock_alert_threshold','stock_pending','purchase_price_ht','purchase_price_basis',
     'sale_price_ht','sale_price_basis','vat_rate_purchase','vat_rate_sale',
-    'loyalty_eligible','loyalty_reward_quantity','preferred_supplier','supplier_reference','top20_hint'
+    'loyalty_eligible','loyalty_reward_quantity','preferred_supplier','supplier_reference',
+    'alternative_supplier','alternative_supplier_reference','alternative_purchase_price_ht','top20_hint','stock_tracked'
   ]
   return fields.some(field => String(existing[field] ?? '') !== String(payload[field] ?? ''))
 }
@@ -2890,7 +3275,11 @@ async function applyImport() {
         loyalty_reward_quantity:item.loyalty_reward_quantity,
         preferred_supplier:item.preferred_supplier,
         supplier_reference:item.supplier_reference,
+        alternative_supplier:item.alternative_supplier,
+        alternative_supplier_reference:item.alternative_supplier_reference,
+        alternative_purchase_price_ht:item.alternative_purchase_price_ht,
         top20_hint:item.top20_hint,
+        stock_tracked:item.stock_tracked,
         tiers:item._tiers || []
       }))
       const {error}=await supabase.rpc('import_products_catalog_v4',{
@@ -2987,6 +3376,14 @@ function monthLong(index) {
   return ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'][index]
 }
 
+function unitemizedCashForPeriod(year, startMonth, endMonth = startMonth) {
+  return cashClosings.filter(c =>
+    dateYear(c.closing_date) === year &&
+    dateMonth(c.closing_date) >= startMonth &&
+    dateMonth(c.closing_date) <= endMonth
+  ).reduce((sum,c)=>sum+num(c.unitemized_cash_sales),0)
+}
+
 function pilotageMonthlyData() {
   const year = currentYear()
   const socialRate = num(settings?.micro_social_rate) / 100
@@ -3000,9 +3397,12 @@ function pilotageMonthlyData() {
     )
     const ids = new Set(monthSales.map(s => s.id))
     const lines = saleLines.filter(line => ids.has(line.sale_id))
-    const ca = monthSales.reduce((sum, sale) => sum + num(sale.total_ttc), 0)
+    const itemizedCa = monthSales.reduce((sum, sale) => sum + num(sale.total_ttc), 0)
+    const unitemizedCa = unitemizedCashForPeriod(year,month)
+    const ca = itemizedCa + unitemizedCa
     const caHt = monthSales.reduce((sum, sale) => sum + num(sale.total_ht), 0)
     const cost = lines.reduce((sum, line) => sum + lineCost(line), 0)
+    // Marge calculable uniquement sur les ventes détaillées.
     const grossMargin = caHt - cost
     const expenses = managementExpenses
       .filter(e => dateYear(e.expense_date) === year && dateMonth(e.expense_date) === month)
@@ -3015,6 +3415,7 @@ function pilotageMonthlyData() {
       month,
       ca,
       caHt,
+      unitemizedCa,
       cost,
       grossMargin,
       grossRate: caHt ? grossMargin / caHt * 100 : 0,
@@ -3489,10 +3890,10 @@ function renderPilotage() {
   const grossRateYtd = caHtYtd ? marginYtd / caHtYtd * 100 : 0
 
   document.querySelector('#pilotageKpis').innerHTML = `
-    <div class="card kpi"><div class="muted">CA du mois</div><div class="kpi-value">${eur(month.ca)}</div></div>
+    <div class="card kpi"><div class="muted">CA du mois</div><div class="kpi-value">${eur(month.ca)}</div>${month.unitemizedCa ? `<div class="small">${eur(month.unitemizedCa)} en espèces non détaillées</div>` : ''}</div>
     <div class="card kpi"><div class="muted">CA cumulé ${currentYear()}</div><div class="kpi-value">${eur(caYtd)}</div></div>
-    <div class="card kpi"><div class="muted">Marge brute cumulée</div><div class="kpi-value">${eur(marginYtd)}</div></div>
-    <div class="card kpi"><div class="muted">Taux de marge brute</div><div class="kpi-value">${grossRateYtd.toFixed(1)} %</div></div>
+    <div class="card kpi"><div class="muted">Marge sur ventes détaillées</div><div class="kpi-value">${eur(marginYtd)}</div><div class="small">Hors coûts des ventes espèces non ventilées</div></div>
+    <div class="card kpi"><div class="muted">Taux de marge détaillée</div><div class="kpi-value">${grossRateYtd.toFixed(1)} %</div></div>
   `
 
   renderThresholds(caYtd)
@@ -3597,7 +3998,8 @@ function renderUrssaf() {
     dateMonth(s.sold_at) <= endMonth
   )
 
-  const ca = qSales.reduce((sum, sale) => sum + num(sale.total_ttc), 0)
+  const ca = qSales.reduce((sum, sale) => sum + num(sale.total_ttc), 0) +
+    unitemizedCashForPeriod(now.getFullYear(),startMonth,endMonth)
   const caisseBanc = caisseBancAmountForSales(qSales)
   const socialRate = num(settings.micro_social_rate)
   const taxRate = num(settings.income_tax_rate)
@@ -3728,7 +4130,7 @@ function renderTopSales() {
 
 function renderLowStocks() {
   const rows = products
-    .filter(p => p.active && num(p.stock_quantity) <= num(p.stock_alert_threshold))
+    .filter(p => p.active && p.stock_tracked !== false && !p.stock_pending && num(p.stock_quantity) <= num(p.stock_alert_threshold))
     .sort((a, b) => num(a.stock_quantity) - num(b.stock_quantity))
 
   document.querySelector('#lowStockRows').innerHTML = rows.length ? rows.map(p => `
@@ -3921,7 +4323,7 @@ function renderTreasury() {
 
   document.querySelector('#treasuryKpis').innerHTML = `
     <div class="card kpi"><div class="muted">CB théorique aujourd'hui</div><div class="kpi-value">${eur(todayExpected.card)}</div></div>
-    <div class="card kpi"><div class="muted">Espèces théoriques aujourd'hui</div><div class="kpi-value">${eur(todayExpected.cash)}</div></div>
+    <div class="card kpi"><div class="muted">Espèces encaissées aujourd'hui</div><div class="kpi-value">${eur(todayExpected.cash + num(cashClosings.find(c=>c.closing_date===today)?.unitemized_cash_sales))}</div></div>
     <div class="card kpi"><div class="muted">Solde bancaire saisi</div><div class="kpi-value">${eur(currentBalance)}</div></div>
     <div class="card kpi"><div class="muted">Prévision J+30</div><div class="kpi-value">${eur(forecast.d30)}</div></div>
   `
@@ -3944,33 +4346,71 @@ function renderClosingExpected() {
   const existing = cashClosings.find(c => c.closing_date === date)
   box.innerHTML = `
     <div class="row space"><span>CB théorique</span><b>${eur(expected.card)}</b></div>
-    <div class="row space"><span>Espèces théoriques</span><b>${eur(expected.cash)}</b></div>
+    <div class="row space"><span>Ventes espèces saisies</span><b>${eur(expected.cash)}</b></div>
+    <div class="row space"><span>Recettes non détaillées</span><b id="closingUnitemizedPreview">0,00 €</b></div>
     <div class="row space"><span>Chèques</span><b>${eur(expected.cheque)}</b></div>
     ${existing ? `<div class="small" style="margin-top:5px">Une clôture existe déjà pour cette date : elle sera mise à jour.</div>` : ''}
   `
+  const floatInput = document.querySelector('#openingCashFloat')
+  if (floatInput) floatInput.value = existing ? num(existing.opening_cash_float).toFixed(2) : ''
+  const unitemizedInput = document.querySelector('#unitemizedCashSales')
+  if (unitemizedInput) unitemizedInput.value = existing ? num(existing.unitemized_cash_sales).toFixed(2) : ''
   if (existing && document.querySelector('#cashCounted')) {
     document.querySelector('#cashCounted').value = num(existing.cash_counted).toFixed(2)
     document.querySelector('#closingNote').value = existing.note || ''
+  } else {
+    document.querySelector('#cashCounted').value = ''
+    document.querySelector('#closingNote').value = ''
   }
+  renderCashClosingPreview()
+}
+
+function renderCashClosingPreview() {
+  const box = document.querySelector('#cashVariancePreview')
+  if (!box) return
+  const date = document.querySelector('#closingDate')?.value
+  const opening = Number(document.querySelector('#openingCashFloat')?.value || 0)
+  const unitemized = Number(document.querySelector('#unitemizedCashSales')?.value || 0)
+  const unitemizedPreview = document.querySelector('#closingUnitemizedPreview')
+  if (unitemizedPreview) unitemizedPreview.textContent=eur(unitemized)
+  const cash = Number(document.querySelector('#cashCounted')?.value || 0)
+  const expected = expectedByMethod(date).cash
+  const variance = Number((cash - opening - expected - unitemized).toFixed(2))
+  if (!document.querySelector('#cashCounted')?.value) {
+    box.textContent = 'Attendu = fonds d’ouverture + ventes saisies + recettes non détaillées.'
+    return
+  }
+  box.textContent = 'Attendu : ' + eur(opening + expected + unitemized) + ' · Écart : ' + eur(variance) +
+    (variance > 0 ? ' (excédent à justifier : ventes non saisies possibles)' :
+     variance < 0 ? ' (manquant à rechercher)' : ' (caisse équilibrée)')
 }
 
 async function saveCashClosing() {
   const msg = document.querySelector('#closingMsg')
   const date = document.querySelector('#closingDate').value
   const cashCounted = Number(document.querySelector('#cashCounted').value || 0)
+  const openingCashFloat = Number(document.querySelector('#openingCashFloat').value || 0)
+  const unitemizedCashSales = Number(document.querySelector('#unitemizedCashSales').value || 0)
   const note = document.querySelector('#closingNote').value.trim() || null
   const expected = expectedByMethod(date)
 
+  if (!Number.isFinite(openingCashFloat) || openingCashFloat < 0 ||
+      !Number.isFinite(unitemizedCashSales) || unitemizedCashSales < 0) {
+    msg.textContent = 'Les fonds et recettes doivent être des montants positifs.'
+    return
+  }
   msg.textContent = 'Enregistrement…'
 
   const payload = {
     organization_id: organizationId,
     closing_date: date,
+    opening_cash_float: openingCashFloat,
+    unitemized_cash_sales: unitemizedCashSales,
     card_total_expected: expected.card,
     cash_total_expected: expected.cash,
     cheque_total_expected: expected.cheque,
     cash_counted: cashCounted,
-    cash_variance: Number((cashCounted - expected.cash).toFixed(2)),
+    cash_variance: Number((cashCounted - openingCashFloat - expected.cash - unitemizedCashSales).toFixed(2)),
     note
   }
 
@@ -3993,11 +4433,13 @@ function renderClosings() {
     <tr>
       <td>${fmtDate(c.closing_date)}</td>
       <td>${eur(c.card_total_expected)}</td>
+      <td>${eur(c.opening_cash_float)}</td>
       <td>${eur(c.cash_total_expected)}</td>
+      <td>${eur(c.unitemized_cash_sales)}</td>
       <td>${eur(c.cash_counted)}</td>
       <td class="${Math.abs(num(c.cash_variance)) > 0.01 ? 'low' : ''}">${eur(c.cash_variance)}</td>
     </tr>
-  `).join('') || '<tr><td colspan="5" class="muted">Aucune clôture enregistrée.</td></tr>'
+  `).join('') || '<tr><td colspan="7" class="muted">Aucune clôture enregistrée.</td></tr>'
 }
 
 async function saveBankBalance() {
@@ -4253,7 +4695,10 @@ function recentDailySalesAverage() {
     new Date(s.sold_at) >= start &&
     new Date(s.sold_at) <= now
   )
-  const total = relevant.reduce((sum,s) => sum + num(s.total_ttc), 0)
+  const total = relevant.reduce((sum,s) => sum + num(s.total_ttc), 0) +
+    cashClosings.filter(c => new Date(c.closing_date+'T12:00:00') >= start &&
+      new Date(c.closing_date+'T12:00:00') <= now)
+      .reduce((sum,c)=>sum+num(c.unitemized_cash_sales),0)
   return total / 60
 }
 
@@ -4408,7 +4853,71 @@ function renderSettings() {
   if (micro) micro.value = num(settings.micro_threshold)
 
   renderCategorySettings()
+  renderSupplierSettings()
   renderBankRulesInSettings()
+}
+
+function renderSupplierSettings() {
+  const body=document.querySelector('#supplierRows')
+  if (!body) return
+  const ordered=[...suppliers].sort((a,b)=>a.name.localeCompare(b.name,'fr'))
+  body.innerHTML = ordered.map(supplier => {
+    const count=products.filter(p =>
+      p.preferred_supplier===supplier.name || p.alternative_supplier===supplier.name).length
+    return `<tr>
+      <td><b>${esc(supplier.name)}</b></td>
+      <td>${count}</td>
+      <td><span class="status ${supplier.active ? 'ok':'off'}">${supplier.active ? 'Actif':'Inactif'}</span></td>
+      <td><button class="secondary toggle-supplier-btn" data-id="${esc(supplier.id)}">
+        ${supplier.active ? 'Désactiver':'Réactiver'}
+      </button></td>
+    </tr>`
+  }).join('') || '<tr><td colspan="4" class="small">Aucun fournisseur enregistré.</td></tr>'
+  body.querySelectorAll('.toggle-supplier-btn').forEach(btn => {
+    btn.onclick = () => toggleSupplier(btn.dataset.id)
+  })
+}
+
+async function addSupplier() {
+  const msg=document.querySelector('#supplierMsg')
+  const input=document.querySelector('#newSupplierName')
+  const name=input.value.replace(/\s+/g,' ').trim()
+  if(name.length<2) { msg.textContent='Saisis un nom de fournisseur.'; return }
+  const exists=suppliers.find(x=>searchable(x.name)===searchable(name))
+  if(exists) {
+    msg.textContent= exists.active
+      ? 'Ce fournisseur existe déjà : '+exists.name
+      : 'Ce fournisseur est désactivé : utilise Réactiver dans la liste.'
+    return
+  }
+  msg.textContent='Ajout en cours…'
+  const {error}=await supabase.from('suppliers').insert({
+    organization_id:organizationId,name,active:true
+  })
+  if(error) { msg.textContent='Erreur : '+error.message; return }
+  input.value=''
+  await loadData()
+  const msgAfter=document.querySelector('#supplierMsg')
+  if(msgAfter) msgAfter.textContent='Fournisseur « '+name+' » ajouté.'
+}
+
+async function toggleSupplier(id) {
+  const supplier=suppliers.find(s=>s.id===id)
+  const msg=document.querySelector('#supplierMsg')
+  if (!supplier) return
+  const nextActive=!supplier.active
+  if(!nextActive) {
+    const n=products.filter(p=>p.preferred_supplier===supplier.name ||
+      p.alternative_supplier===supplier.name).length
+    if(n && !confirm('Ce fournisseur apparaît sur '+n+' fiche(s). Le désactiver le retirera des nouveaux choix, sans supprimer ses références. Continuer ?')) return
+  }
+  const {error}=await supabase.from('suppliers')
+    .update({active:nextActive,updated_at:new Date().toISOString()})
+    .eq('id',id).eq('organization_id',organizationId)
+  if(error) { msg.textContent='Erreur : '+error.message; return }
+  await loadData()
+  const msgAfter=document.querySelector('#supplierMsg')
+  if(msgAfter) msgAfter.textContent=supplier.name+(nextActive ? ' réactivé.' : ' désactivé.')
 }
 
 function renderCategorySettings() {
