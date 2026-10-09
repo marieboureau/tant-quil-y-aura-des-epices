@@ -270,7 +270,7 @@ begin
 exception when others then
   raise;
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.cancel_sale(p_sale_id uuid, p_reason text DEFAULT NULL::text)
@@ -402,7 +402,7 @@ begin
   where id = p_sale_id
     and organization_id = v_org;
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.use_loyalty_reward(p_customer_id uuid, p_product_id uuid, p_quantity numeric)
@@ -444,7 +444,7 @@ begin
   values(v_org,p_customer_id,'reward_used',0,p_product_id,p_quantity,'Cadeau fidélité') returning id into v_event;
   return v_event;
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.import_products_catalog_v4(p_rows jsonb, p_full_catalog boolean DEFAULT false)
@@ -609,5 +609,5 @@ begin
     'created',v_created,'updated',v_updated,'deactivated',v_deactivated
   );
 end;
-$function$
+$function$;
 
