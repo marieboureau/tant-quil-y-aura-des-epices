@@ -1468,6 +1468,27 @@ function switchTab(btn) {
   if (tab === 'backup') renderBackupPanel()
 }
 
+// Chargement paginé : Supabase/PostgREST limite habituellement chaque réponse
+// à 1 000 lignes. Ne jamais déduire la fidélité d'une tranche incomplète.
+async function fetchAllOrgRows(table, orderColumn, ascending = true) {
+  const pageSize = 500
+  const maxPages = 200
+  const rows = []
+  for (let page = 0; page < maxPages; page++) {
+    const start = page * pageSize
+    const { data, error } = await supabase.from(table)
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order(orderColumn, { ascending })
+      .order('id', { ascending: true })
+      .range(start, start + pageSize - 1)
+    if (error) return { data: null, error }
+    rows.push(...(data || []))
+    if (!data || data.length < pageSize) return { data: rows, error: null }
+  }
+  return { data: null, error: { message: 'Chargement incomplet : trop de lignes dans ' + table + '. Aucune valeur partielle ne sera affichée.' } }
+}
+
 async function loadData() {
   loadOfflineState()
 
@@ -1492,9 +1513,9 @@ async function loadData() {
     supabase.from('suppliers').select('id,name,active,organization_id').order('name'),
     supabase.from('products').select('*').order('name'),
     supabase.from('product_price_tiers').select('*').eq('active',true).order('quantity'),
-    supabase.from('customers').select('*').order('display_name'),
+    fetchAllOrgRows('customers', 'display_name', true),
     supabase.from('settings').select('*').single(),
-    supabase.from('loyalty_events').select('*').order('created_at', { ascending: false }),
+    fetchAllOrgRows('loyalty_events', 'created_at', false),
     supabase.from('sales').select('*').order('sold_at', { ascending: false }).limit(5000),
     supabase.from('sale_lines').select('*').limit(50000),
     supabase.from('payments').select('*').order('paid_at', { ascending: false }).limit(50000),
