@@ -616,3 +616,19 @@ main,
   flex-shrink:0;width:40px;height:40px;border-radius:9px;border:1px solid #d5c8ba;
   background:#f6f1eb;color:#54493d;font-size:24px;cursor:pointer;line-height:1
 }
+
+
+/* Sprint 6H : codes caisse et prix dégressifs en quantités d'unités */
+#sell .checkout-code{
+  display:inline-block;min-width:28px;margin-right:4px;padding:3px 5px;
+  background:#ffffffbd;border:1px solid #bdb4a8;border-radius:6px;
+  font-weight:750;font-size:13px;text-align:center;color:#4a4139;
+  font-variant-numeric:tabular-nums;
+}
+#productDialog .unit-tier-row{display:grid;grid-template-columns:1fr 1fr 42px;gap:8px;align-items:end;margin-top:7px}
+#productDialog .unit-tier-row>.unit-tier-remove{
+  height:42px;min-height:42px;padding:0;font-size:23px;border-radius:8px
+}
+#productDialog .unit-tier-row label{min-width:0}
+#products #includeInactiveProducts{accent-color:var(--accent);width:18px;height:18px}
+@media(max-width:570px){#productDialog .unit-tier-row{grid-template-columns:1fr 1fr 34px;gap:5px}}
