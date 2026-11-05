@@ -1,6 +1,6 @@
 -- Ordre manuel et stable choisi par Benoît le 05/11/2026.
 -- Les codes ne sont jamais recalculés depuis les statistiques de vente.
-do $$
+do $checkout$
 declare v_count integer; v_duplicates integer;
 begin
  select count(*) into v_count from public.products where sku in ('PRD-0088','PRD-0080','PRD-0030','PRD-0034','PRD-0003','PRD-0045','PRD-0005','PRD-0083','PRD-0087','PRD-0085','PRD-0078','PRD-0084','PRD-0072','PRD-000022','PRD-0068','PRD-0059','PRD-0055','PRD-0017','PRD-0105','PRD-0075');
@@ -47,7 +47,7 @@ begin
  )
  update public.products p set checkout_code=o.new_code,updated_at=now()
  from others o where p.id=o.id;
-end $;
+end $checkout$;
 
 -- Tarif du lot de Vanille de Tahiti, sans changer le prix 1 gousse = 10 €.
 insert into public.product_unit_price_tiers(organization_id,product_id,quantity,price_ht)
