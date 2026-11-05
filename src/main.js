@@ -319,7 +319,10 @@ function renderShell() {
               <div id="cartEmpty" class="muted">Touchez un produit pour l’ajouter.</div>
 
               <label class="small">Client fidélité</label>
-              <div class="search-wrap"><input id="customerSearch" class="field" placeholder="Rechercher un client…"><button class="search-clear" type="button" data-clear="customerSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
+              <div class="customer-picker-row">
+                <div class="search-wrap"><input id="customerSearch" class="field" placeholder="Rechercher un client…"><button class="search-clear" type="button" data-clear="customerSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
+                <button id="quickAddClient" type="button" class="secondary quick-add-client" title="Créer un client et le choisir pour cette vente" aria-label="Ajouter un client">+</button>
+              </div>
               <div id="customerHints"></div>
               <div id="selectedCustomer" class="notice" style="display:none;margin-top:8px"></div>
 
@@ -1084,7 +1087,9 @@ function renderShell() {
 
     <dialog id="productDialog">
       <form method="dialog" class="card dialog-card product-dialog-card">
-        <h2 id="productDialogTitle">Nouveau produit</h2>
+        <div class="dialog-head"><h2 id="productDialogTitle">Nouveau produit</h2>
+          <button type="button" class="dialog-close" data-dialog="productDialog" title="Fermer sans enregistrer" aria-label="Fermer la fiche produit">×</button>
+        </div>
 
         <label class="small">Nom</label>
         <input id="pName" class="field" placeholder="Ex. Gingembre moulu">
@@ -1174,7 +1179,7 @@ function renderShell() {
         </div>
 
         <div class="row" style="justify-content:flex-end;margin-top:14px">
-          <button value="cancel" class="secondary">Annuler</button>
+          <button type="button" class="secondary dialog-cancel" data-dialog="productDialog">Annuler</button>
           <button id="saveProductBtn" type="button" class="primary">Enregistrer</button>
         </div>
         <div id="productMsg" class="small"></div>
@@ -1183,7 +1188,9 @@ function renderShell() {
 
     <dialog id="clientDialog">
       <form method="dialog" class="card dialog-card">
-        <h2 id="clientDialogTitle">Nouveau client</h2>
+        <div class="dialog-head"><h2 id="clientDialogTitle">Nouveau client</h2>
+          <button type="button" class="dialog-close" data-dialog="clientDialog" title="Fermer sans enregistrer" aria-label="Fermer la fiche client">×</button>
+        </div>
         <label class="small" for="cName">Nom et prénom</label>
         <input id="cName" class="field" placeholder="NOM Prénom (2e prénom si homonyme)" autocomplete="off">
         <div class="small" style="margin-top:4px">Format conseillé : NOM en majuscules, Prénom puis éventuel deuxième prénom.</div>
@@ -1194,7 +1201,7 @@ function renderShell() {
         <input id="cPhone" class="field" placeholder="Téléphone (facultatif)" style="margin-top:8px">
         <input id="cEmail" class="field" type="email" placeholder="Email (facultatif)" style="margin-top:8px">
         <div class="row" style="justify-content:flex-end;margin-top:14px">
-          <button value="cancel" class="secondary">Annuler</button>
+          <button type="button" class="secondary dialog-cancel" data-dialog="clientDialog">Annuler</button>
           <button id="saveClientBtn" type="button" class="primary">Enregistrer</button>
         </div>
         <div id="clientMsg" class="small"></div>
@@ -1293,6 +1300,10 @@ function bindEvents() {
 
   document.querySelector('#addProductBtn').onclick = () => openProductDialog()
   document.querySelector('#addClientBtn').onclick = () => openClientDialog()
+  document.querySelector('#quickAddClient').onclick = () => openClientDialog(null, { fromSale: true })
+  document.querySelectorAll('.dialog-close, .dialog-cancel').forEach(button => {
+    button.onclick = () => requestDialogClose(button.dataset.dialog)
+  })
   document.querySelector('#saveProductBtn').onclick = saveProduct
   document.querySelector('#pPricingMode').onchange = updateProductPricingForm
   document.querySelector('#pCategory').onchange = () => renderSubfamilyChoices()
@@ -1301,8 +1312,18 @@ function bindEvents() {
   document.querySelector('#cName').oninput = renderClientDuplicateHint
   for (const id of ['productDialog','clientDialog']) {
     const dialog = document.querySelector('#'+id)
-    dialog.addEventListener('input', saveFormDraft)
-    dialog.addEventListener('change', saveFormDraft)
+    dialog.addEventListener('input', event => {
+      dialog.dataset.dirty = 'true'
+      saveFormDraft(event)
+    })
+    dialog.addEventListener('change', event => {
+      dialog.dataset.dirty = 'true'
+      saveFormDraft(event)
+    })
+    dialog.addEventListener('cancel', event => {
+      event.preventDefault()
+      requestDialogClose(id)
+    })
     dialog.addEventListener('close', () => {
       const draft = readFormDraft()
       if (draft?.dialogId === id) sessionStorage.removeItem('epices_form_draft')
@@ -2359,6 +2380,15 @@ function updateProductPricingForm() {
   if (!fixed && document.querySelector('#pSell')) document.querySelector('#pSell').value = ''
 }
 
+function requestDialogClose(id) {
+  const dialog = document.querySelector('#'+id)
+  if (!dialog?.open) return
+  if (dialog.dataset.dirty === 'true' &&
+      !confirm('Fermer sans enregistrer ? Les modifications de cette fiche seront perdues.')) return
+  sessionStorage.removeItem('epices_form_draft')
+  dialog.close()
+}
+
 function openProductDialog(productId = null) {
   const dialog = document.querySelector('#productDialog')
   const product = productId ? products.find(p => p.id === productId) : null
@@ -2409,6 +2439,7 @@ function openProductDialog(productId = null) {
   document.querySelector('#productMsg').textContent = ''
   updateProductPricingForm()
   updateTrackedStockForm()
+  dialog.dataset.dirty = 'false'
   dialog.showModal()
 }
 
@@ -2496,17 +2527,20 @@ async function saveProduct() {
   }
 }
 
-function openClientDialog(customerId = null) {
+function openClientDialog(customerId = null, { fromSale = false } = {}) {
   const dialog = document.querySelector('#clientDialog')
   const customer = customerId ? customers.find(c => c.id === customerId) : null
   dialog.dataset.editId = customer?.id || ''
+  dialog.dataset.fromSale = fromSale ? 'true' : 'false'
   document.querySelector('#clientDialogTitle').textContent = customer ? 'Modifier le client' : 'Nouveau client'
+  document.querySelector('#saveClientBtn').textContent = fromSale ? 'Créer et choisir' : 'Enregistrer'
   document.querySelector('#cName').value = customer?.display_name || ''
   document.querySelector('#cPhone').value = customer?.phone || ''
   document.querySelector('#cEmail').value = customer?.email || ''
   document.querySelector('#cVisits').value = customer ? loyaltyInfo(customer.id).visits : 0
   document.querySelector('#clientDuplicateWarning').style.display = 'none'
   document.querySelector('#clientMsg').textContent = ''
+  dialog.dataset.dirty = 'false'
   dialog.showModal()
 }
 
@@ -2540,7 +2574,7 @@ async function saveCustomer() {
   }
   const btn = document.querySelector('#saveClientBtn')
   btn.disabled = true
-  const {error} = await supabase.rpc('save_customer_with_visits', {
+  const {data: savedCustomerId,error} = await supabase.rpc('save_customer_with_visits', {
     p_customer_id: dialog.dataset.editId || null,
     p_display_name: name,
     p_phone: document.querySelector('#cPhone').value.trim(),
@@ -2550,9 +2584,11 @@ async function saveCustomer() {
   btn.disabled = false
   if (error) return msg.textContent = 'Erreur : ' + error.message
 
+  const selectAfterSave = dialog.dataset.fromSale === 'true'
   sessionStorage.removeItem('epices_form_draft')
   dialog.close()
   await loadData()
+  if (selectAfterSave && savedCustomerId) selectCustomer(savedCustomerId)
 }
 
 
