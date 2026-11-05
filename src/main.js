@@ -1179,6 +1179,7 @@ function renderShell() {
         </div>
 
         <div class="row" style="justify-content:flex-end;margin-top:14px">
+          <button id="toggleProductActiveBtn" type="button" class="secondary" style="display:none;margin-right:auto">Désactiver</button>
           <button type="button" class="secondary dialog-cancel" data-dialog="productDialog">Annuler</button>
           <button id="saveProductBtn" type="button" class="primary">Enregistrer</button>
         </div>
@@ -1305,6 +1306,7 @@ function bindEvents() {
     button.onclick = () => requestDialogClose(button.dataset.dialog)
   })
   document.querySelector('#saveProductBtn').onclick = saveProduct
+  document.querySelector('#toggleProductActiveBtn').onclick = toggleProductActive
   document.querySelector('#pPricingMode').onchange = updateProductPricingForm
   document.querySelector('#pCategory').onchange = () => renderSubfamilyChoices()
   document.querySelector('#pStockTracked').onchange = updateTrackedStockForm
@@ -2401,6 +2403,9 @@ function openProductDialog(productId = null) {
   const product = productId ? products.find(p => p.id === productId) : null
   dialog.dataset.editId = product?.id || ''
   document.querySelector('#productDialogTitle').textContent = product ? 'Modifier le produit' : 'Nouveau produit'
+  const activeButton = document.querySelector('#toggleProductActiveBtn')
+  activeButton.style.display = product ? '' : 'none'
+  if (product) activeButton.textContent = product.active ? 'Désactiver le produit' : 'Réactiver le produit'
 
   document.querySelector('#pCategory').innerHTML = categories
     .filter(c => c.active || c.id === product?.category_id)
@@ -2448,6 +2453,35 @@ function openProductDialog(productId = null) {
   updateTrackedStockForm()
   dialog.dataset.dirty = 'false'
   dialog.showModal()
+}
+
+async function toggleProductActive() {
+  const dialog = document.querySelector('#productDialog')
+  const product = products.find(p => p.id === dialog.dataset.editId)
+  const msg = document.querySelector('#productMsg')
+  if (!product) return
+  if (cart.some(item => item.id === product.id)) {
+    msg.textContent = 'Ce produit est présent dans le panier. Termine ou retire cette ligne avant de le désactiver.'
+    return
+  }
+  if (dialog.dataset.dirty === 'true') {
+    msg.textContent = 'Enregistre ou annule les modifications de la fiche avant de changer son statut.'
+    return
+  }
+  const nextActive = !product.active
+  if (!confirm(nextActive
+    ? 'Réactiver « '+product.name+' » pour les prochaines ventes ?'
+    : 'Désactiver « '+product.name+' » ? Il ne sera plus proposé à la vente, mais son historique sera conservé.')) return
+  const btn = document.querySelector('#toggleProductActiveBtn')
+  btn.disabled = true
+  const { error } = await supabase.from('products')
+    .update({active:nextActive,updated_at:new Date().toISOString()})
+    .eq('id',product.id).eq('organization_id',organizationId)
+  btn.disabled = false
+  if (error) { msg.textContent = 'Erreur : '+error.message; return }
+  sessionStorage.removeItem('epices_form_draft')
+  dialog.close()
+  await loadData()
 }
 
 async function saveProduct() {
