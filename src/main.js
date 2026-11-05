@@ -2500,9 +2500,9 @@ function openProductDialog(productId = null) {
     .filter(c => c.active || c.id === product?.category_id)
     .map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
   document.querySelector('#pStockTracked').checked = product?.stock_tracked !== false
-  document.querySelector('#pCheckoutCode').value = product?.checkout_code || (
-    products.reduce((m,p)=>Math.max(m,num(p.checkout_code)),0)+1
-  )
+  document.querySelector('#pCheckoutCode').value = product
+    ? (product.checkout_code ?? '')
+    : products.reduce((m,p)=>Math.max(m,num(p.checkout_code)),0)+1
   renderSupplierChoices('pSupplier',product?.preferred_supplier || '')
   renderSupplierChoices('pAltSupplier',product?.alternative_supplier || '')
 
