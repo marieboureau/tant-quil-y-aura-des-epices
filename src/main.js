@@ -425,11 +425,14 @@ function renderShell() {
                 <span id="productFilterResultCount" class="small"></span>
               </div>
             </details>
+            <label class="row small" style="display:flex;align-items:center;gap:7px;margin:10px 0">
+              <input id="includeInactiveProducts" type="checkbox"> Afficher aussi les produits inactifs (archives)
+            </label>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Réf.</th><th>Produit</th><th>Catégorie</th><th>Sous-famille</th><th>Stock</th>
+                    <th>Code</th><th>Réf.</th><th>Produit</th><th>Catégorie</th><th>Sous-famille</th><th>Stock</th>
                     <th>Fournisseur</th><th>Réf. fournisseur</th><th>Achat HT</th><th>Tarifs</th><th>Cadeau</th><th>Statut</th><th>Actions</th>
                   </tr>
                 </thead>
@@ -1278,6 +1281,7 @@ function bindEvents() {
 
   document.querySelector('#sellSearch').oninput = renderSellProducts
   document.querySelector('#productSearch').oninput = renderProducts
+  document.querySelector('#includeInactiveProducts').onchange = renderProducts
   document.querySelectorAll('.product-filter-field').forEach(select => {
     select.onchange = () => { updateProductFilterValues(select); renderProducts() }
   })
@@ -1797,7 +1801,7 @@ function productCardHtml(p, isTop = false) {
     <div class="sale-product-tile">
       <button type="button" class="product-card ${categoryColorClass(p)} ${isTop ? 'top-product' : ''} ${noTariff ? 'tariff-missing' : ''}" data-id="${p.id}">
         <div class="row space product-card-title">
-          <b>${esc(p.name)}</b>
+          <b>${p.checkout_code ? `<span class="checkout-code">${String(p.checkout_code).padStart(2,'0')}</span> ` : ''}${esc(p.name)}</b>
           ${isTop ? '<span class="top-product-badge">Top</span>' : ''}
         </div>
         <span>${productPriceSummary(p)}</span>
@@ -1818,19 +1822,26 @@ function renderSellProducts() {
 
   const query = input.value.trim()
   const popularity = productPopularityMap()
+  const numericQuery=/^\d+$/.test(query) ? Number(query) : null
   const filtered = activeProducts()
-    .filter(p => matchesSearch([p.name,p.sku,p.subfamily].join(' '),query))
+    .filter(p => numericQuery!==null
+      ? p.checkout_code===numericQuery
+      : matchesSearch([p.name,p.sku,p.subfamily].join(' '),query))
     .sort((a,b) => {
-      const featured = Number(!!b.top20_hint)-Number(!!a.top20_hint)
-      if (featured) return featured
-      const diff = num(popularity.get(b.id)) - num(popularity.get(a.id))
-      return diff || a.name.localeCompare(b.name,'fr')
+      const aTop=num(a.checkout_code)>=1&&num(a.checkout_code)<=20
+      const bTop=num(b.checkout_code)>=1&&num(b.checkout_code)<=20
+      if(aTop!==bTop) return aTop ? -1 : 1
+      if(aTop&&bTop) return a.checkout_code-b.checkout_code
+      const ac=num(a.checkout_code)||Number.MAX_SAFE_INTEGER
+      const bc=num(b.checkout_code)||Number.MAX_SAFE_INTEGER
+      return ac-bc || (num(popularity.get(b.id))-num(popularity.get(a.id))) ||
+        a.name.localeCompare(b.name,'fr')
     })
 
   if (query) {
     container.innerHTML = filtered.map(p => productCardHtml(p,!!p.top20_hint)).join('')
   } else {
-    const featured=filtered.filter(p=>p.top20_hint).slice(0,20)
+    const featured=filtered.filter(p=>p.checkout_code>=1&&p.checkout_code<=20).slice(0,20)
     const featuredIds=new Set(featured.map(p=>p.id))
     const fill=filtered.filter(p=>!featuredIds.has(p.id)).slice(0,Math.max(0,20-featured.length))
     const top=[...featured,...fill]
@@ -1838,8 +1849,8 @@ function renderSellProducts() {
     const rest=filtered.filter(p=>!topIds.has(p.id))
     container.innerHTML = `
       <div class="sell-product-section-title">
-        <b>Les plus vendus</b>
-        <span class="small">Top 20 préparé avec Benoît, puis enrichi par les ventes enregistrées</span>
+        <b>Favoris de Benoît — codes 01 à 20</b>
+        <span class="small">Numéros fixes, indépendants du classement des ventes</span>
       </div>
       ${top.map(p => productCardHtml(p,true)).join('')}
       ${rest.length ? `<div class="sell-product-section-title all-products"><b>Tous les autres produits</b></div>${rest.map(p => productCardHtml(p,false)).join('')}` : ''}
@@ -2127,10 +2138,16 @@ function renderProducts() {
   if (!input || !body) return
 
   const query = input.value.trim()
-  const matching = products.filter(p => matchesSearch(
-    [p.name,p.sku,p.subfamily,p.preferred_supplier,p.supplier_reference,
-     p.alternative_supplier,p.alternative_supplier_reference].join(' '),query
-  ) && productPassesAdvancedFilters(p))
+  const numericQuery=/^\d+$/.test(query) ? Number(query) : null
+  const includesArchived=document.querySelector('#includeInactiveProducts')?.checked || false
+  const inactiveFilterRequested=[...document.querySelectorAll('.product-filter-row')].some(row=>
+    row.querySelector('.product-filter-field').value==='active_status' &&
+    row.querySelector('.product-filter-value').value==='inactive')
+  const matching = products.filter(p => (p.active || includesArchived || inactiveFilterRequested)
+    && (numericQuery!==null ? p.checkout_code===numericQuery : matchesSearch(
+      [p.name,p.sku,p.subfamily,p.preferred_supplier,p.supplier_reference,
+       p.alternative_supplier,p.alternative_supplier_reference].join(' '),query))
+    && productPassesAdvancedFilters(p))
   const counter=document.querySelector('#productFilterResultCount')
   if(counter) counter.textContent = matching.length+' produit(s) sur '+products.length
   body.innerHTML = matching.map(p => {
@@ -2139,6 +2156,7 @@ function renderProducts() {
       p.stock_pending ? '<span class="muted">À saisir</span>' : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
     return `
       <tr>
+        <td><b>${p.checkout_code || '—'}</b></td>
         <td>${esc(p.sku || '—')}</td>
         <td><b>${esc(p.name)}</b>${p.top20_hint ? '<div class="small"><b>Top 20</b></div>' : ''}</td>
         <td>${esc(category)}</td>
