@@ -1993,6 +1993,10 @@ async function completeSale() {
   for (const item of cart) {
     const product = products.find(p => p.id === item.id)
     if (!product) return msg.textContent = 'Produit introuvable.'
+    if (product.pricing_mode === 'fixed_unit' && unitTiersForProduct(product.id).length &&
+        (!Number.isInteger(item.qty) || item.qty<1 || item.qty>1000)) {
+      return msg.textContent = 'Les tarifs par lots exigent une quantité entière entre 1 et 1000 unités.'
+    }
     if (product.stock_tracked !== false && item.qty > num(product.stock_quantity)) {
       return msg.textContent = `Stock insuffisant pour ${product.name}.`
     }
@@ -3086,19 +3090,19 @@ function downloadCsv(filename, headers, rows) {
 
 function exportProducts() {
   const headers = [
-    'sku','name','category','subfamily','active','stock_unit','pricing_mode',
+    'sku','checkout_code','name','category','subfamily','active','stock_unit','pricing_mode',
     'preferred_supplier','supplier_reference','alternative_supplier','alternative_supplier_reference',
     'alternative_purchase_price_ht','top20_hint','stock_pending','stock_tracked',
     'sale_price_25g_ht','sale_price_50g_ht','sale_price_100g_ht','sale_price_200g_ht','sale_price_unit_ht',
     'sale_price_ht','sale_price_basis','purchase_unit','purchase_unit_quantity',
     'purchase_unit_stock_equivalent','stock_quantity','stock_alert_threshold',
     'purchase_price_ht','purchase_price_basis','vat_rate_purchase','vat_rate_sale',
-    'loyalty_eligible','loyalty_reward_quantity'
+    'loyalty_eligible','loyalty_reward_quantity','unit_lots_json'
   ]
 
   const tierValue=(productId,quantity)=>tiersForProduct(productId).find(t=>num(t.quantity)===quantity)?.price_ht ?? ''
   const rows = products.map(p => [
-    p.sku,p.name,categories.find(c => c.id === p.category_id)?.name || '',p.subfamily || '',
+    p.sku,p.checkout_code ?? '',p.name,categories.find(c => c.id === p.category_id)?.name || '',p.subfamily || '',
     p.active,p.stock_unit,p.pricing_mode || 'tiered_weight',
     p.preferred_supplier || '',p.supplier_reference || '',
     p.alternative_supplier || '',p.alternative_supplier_reference || '',p.alternative_purchase_price_ht ?? '',
@@ -3108,7 +3112,8 @@ function exportProducts() {
     p.sale_price_ht,p.sale_price_basis,p.purchase_unit,p.purchase_unit_quantity,
     p.purchase_unit_stock_equivalent,p.stock_pending ? '' : p.stock_quantity,p.stock_alert_threshold,
     p.purchase_price_ht,p.purchase_price_basis,p.vat_rate_purchase,p.vat_rate_sale,
-    p.loyalty_eligible,p.loyalty_reward_quantity
+    p.loyalty_eligible,p.loyalty_reward_quantity,
+    JSON.stringify(unitTiersForProduct(p.id).map(t=>({quantity:t.quantity,price_ht:t.price_ht})))
   ])
 
   downloadCsv(`produits_${todayStamp()}.csv`, headers, rows)
