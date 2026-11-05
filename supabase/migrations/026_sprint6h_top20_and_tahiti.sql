@@ -39,7 +39,15 @@ begin
  update public.products set active=false,updated_at=now()
  where sku='PRD-000021' and name='FOIE TISANE';
  if not found then raise exception 'FOIE TISANE introuvable';end if;
-end $$;
+ -- Première attribution aux autres produits actifs : tri alphabétique figé à l'installation.
+ -- Les codes restent stables ensuite, même quand le produit change de nom ou de popularité.
+ with others as (
+   select id, 20+row_number() over(order by lower(name),sku) as new_code
+   from public.products where active=true and checkout_code is null
+ )
+ update public.products p set checkout_code=o.new_code,updated_at=now()
+ from others o where p.id=o.id;
+end $;
 
 -- Tarif du lot de Vanille de Tahiti, sans changer le prix 1 gousse = 10 €.
 insert into public.product_unit_price_tiers(organization_id,product_id,quantity,price_ht)
