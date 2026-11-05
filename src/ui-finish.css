@@ -592,3 +592,43 @@ main,
   #products .product-filter-row{grid-template-columns:1fr}
   #products .product-filter-footer{align-items:flex-start;flex-direction:column}
 }
+
+
+/* Sprint 6H — Raccourcis de caisse et fermeture rapide des fiches */
+#sell .customer-picker-row{display:flex;align-items:stretch;gap:8px}
+#sell .customer-picker-row .search-wrap{flex:1;min-width:0}
+#sell .quick-add-client{flex:0 0 44px;width:44px;min-height:44px;padding:0;border-radius:10px;font-size:28px;line-height:1}
+#sell .sale-product-tile{position:relative;min-width:0}
+#sell .sale-product-tile>.product-card{width:100%;height:100%;min-height:108px;padding-right:42px;display:block;text-align:left}
+#sell .sale-product-tile>.edit-product-shortcut{
+  position:absolute;right:7px;top:7px;width:32px;height:32px;min-height:32px;
+  padding:0;display:flex;align-items:center;justify-content:center;
+  border-radius:8px;background:#ffffffde;border:1px solid #bfb4a5;
+  color:#654d3e;font-size:17px;box-shadow:0 1px 3px #00000012;z-index:2
+}
+#sell .sale-product-tile>.edit-product-shortcut:focus-visible,
+#sell .quick-add-client:focus-visible{outline:3px solid #947352;outline-offset:2px}
+#productDialog .dialog-head,#clientDialog .dialog-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px
+}
+#productDialog .dialog-head h2,#clientDialog .dialog-head h2{margin:0}
+#productDialog .dialog-head>.dialog-close,#clientDialog .dialog-head>.dialog-close{
+  flex-shrink:0;width:40px;height:40px;border-radius:9px;border:1px solid #d5c8ba;
+  background:#f6f1eb;color:#54493d;font-size:24px;cursor:pointer;line-height:1
+}
+
+
+/* Sprint 6H : codes caisse et prix dégressifs en quantités d'unités */
+#sell .checkout-code{
+  display:inline-block;min-width:28px;margin-right:4px;padding:3px 5px;
+  background:#ffffffbd;border:1px solid #bdb4a8;border-radius:6px;
+  font-weight:750;font-size:13px;text-align:center;color:#4a4139;
+  font-variant-numeric:tabular-nums;
+}
+#productDialog .unit-tier-row{display:grid;grid-template-columns:1fr 1fr 42px;gap:8px;align-items:end;margin-top:7px}
+#productDialog .unit-tier-row>.unit-tier-remove{
+  height:42px;min-height:42px;padding:0;font-size:23px;border-radius:8px
+}
+#productDialog .unit-tier-row label{min-width:0}
+#products #includeInactiveProducts{accent-color:var(--accent);width:18px;height:18px}
+@media(max-width:570px){#productDialog .unit-tier-row{grid-template-columns:1fr 1fr 34px;gap:5px}}

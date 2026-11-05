@@ -7,6 +7,7 @@ let session = null
 let organizationId = null
 let products = []
 let productPriceTiers = []
+let productUnitPriceTiers = []
 let customers = []
 let categories = []
 let suppliers = []
@@ -62,7 +63,7 @@ const SUBFAMILIES = {
   'Accessoires': ['Accessoires']
 }
 
-const PRODUCT_DRAFT_FIELDS = ['pName','pCategory','pSubfamily','pPricingMode','pStock','pThreshold',
+const PRODUCT_DRAFT_FIELDS = ['pName','pCheckoutCode','pCategory','pSubfamily','pPricingMode','pStock','pThreshold',
   'pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef',
   'pAltSupplier','pAltSupplierRef','pAltSupplierBuy','pTop20','pStockTracked']
 const CLIENT_DRAFT_FIELDS = ['cName','cVisits','cPhone','cEmail']
@@ -80,7 +81,7 @@ function saveFormDraft(event) {
   }))
   sessionStorage.setItem('epices_form_draft', JSON.stringify({
     dialogId:dialog.id,editId:dialog.dataset.editId || null,
-    updatedAt:Date.now(),data
+    updatedAt:Date.now(),data:dialog.id==='productDialog' ? {...data,unitTiers:getUnitTierInputs()} : data
   }))
 }
 function restoreFormDraft() {
@@ -113,6 +114,7 @@ function restoreFormDraft() {
     else element.value = value
   }
   if (draft.dialogId === 'productDialog') {
+    if(Array.isArray(draft.data.unitTiers)) setUnitTierInputs(draft.data.unitTiers)
     updateProductPricingForm()
     updateTrackedStockForm()
   } else renderClientDuplicateHint()
@@ -319,7 +321,10 @@ function renderShell() {
               <div id="cartEmpty" class="muted">Touchez un produit pour l’ajouter.</div>
 
               <label class="small">Client fidélité</label>
-              <div class="search-wrap"><input id="customerSearch" class="field" placeholder="Rechercher un client…"><button class="search-clear" type="button" data-clear="customerSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
+              <div class="customer-picker-row">
+                <div class="search-wrap"><input id="customerSearch" class="field" placeholder="Rechercher un client…"><button class="search-clear" type="button" data-clear="customerSearch" aria-label="Effacer la recherche" title="Effacer">×</button></div>
+                <button id="quickAddClient" type="button" class="secondary quick-add-client" title="Créer un client et le choisir pour cette vente" aria-label="Ajouter un client">+</button>
+              </div>
               <div id="customerHints"></div>
               <div id="selectedCustomer" class="notice" style="display:none;margin-top:8px"></div>
 
@@ -420,11 +425,14 @@ function renderShell() {
                 <span id="productFilterResultCount" class="small"></span>
               </div>
             </details>
+            <label class="row small" style="display:flex;align-items:center;gap:7px;margin:10px 0">
+              <input id="includeInactiveProducts" type="checkbox"> Afficher aussi les produits inactifs (archives)
+            </label>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Réf.</th><th>Produit</th><th>Catégorie</th><th>Sous-famille</th><th>Stock</th>
+                    <th>Code</th><th>Réf.</th><th>Produit</th><th>Catégorie</th><th>Sous-famille</th><th>Stock</th>
                     <th>Fournisseur</th><th>Réf. fournisseur</th><th>Achat HT</th><th>Tarifs</th><th>Cadeau</th><th>Statut</th><th>Actions</th>
                   </tr>
                 </thead>
@@ -1084,10 +1092,15 @@ function renderShell() {
 
     <dialog id="productDialog">
       <form method="dialog" class="card dialog-card product-dialog-card">
-        <h2 id="productDialogTitle">Nouveau produit</h2>
+        <div class="dialog-head"><h2 id="productDialogTitle">Nouveau produit</h2>
+          <button type="button" class="dialog-close" data-dialog="productDialog" title="Fermer sans enregistrer" aria-label="Fermer la fiche produit">×</button>
+        </div>
 
         <label class="small">Nom</label>
         <input id="pName" class="field" placeholder="Ex. Gingembre moulu">
+        <label class="small" for="pCheckoutCode" style="display:block;margin-top:8px">Code caisse (numéro unique et permanent)</label>
+        <input id="pCheckoutCode" class="field" type="number" min="1" max="999999" step="1" placeholder="Ex. 21">
+        <div class="small">Un numéro ne peut appartenir qu’à un seul produit. Il ne change pas quand les ventes évoluent.</div>
 
         <div class="grid product-form-grid" style="margin-top:8px">
           <div>
@@ -1160,6 +1173,10 @@ function renderShell() {
         <div id="fixedPriceBlock" style="display:none;margin-top:10px">
           <label class="small">Prix de vente par unité</label>
           <input id="pSell" type="number" min="0" step="0.01" class="field" placeholder="Ex. 12,00">
+          <div class="small" style="margin-top:7px"><b>Tarifs par lot</b> — prix total pour une quantité d’unités. Le prix ci-dessus reste celui d'une unité.</div>
+          <div id="unitTierRows"></div>
+          <button id="addUnitTierBtn" type="button" class="secondary" style="margin-top:6px">+ Ajouter un tarif par lot</button>
+          <div class="small">Ex. 3 gousses : 26 €. Pour 4 : un lot de 3 + une gousse = 36 €. Aucune remise globale sur le ticket.</div>
         </div>
 
         <div id="tierPriceBlock" style="margin-top:12px">
@@ -1174,7 +1191,8 @@ function renderShell() {
         </div>
 
         <div class="row" style="justify-content:flex-end;margin-top:14px">
-          <button value="cancel" class="secondary">Annuler</button>
+          <button id="toggleProductActiveBtn" type="button" class="secondary" style="display:none;margin-right:auto">Désactiver</button>
+          <button type="button" class="secondary dialog-cancel" data-dialog="productDialog">Annuler</button>
           <button id="saveProductBtn" type="button" class="primary">Enregistrer</button>
         </div>
         <div id="productMsg" class="small"></div>
@@ -1183,7 +1201,9 @@ function renderShell() {
 
     <dialog id="clientDialog">
       <form method="dialog" class="card dialog-card">
-        <h2 id="clientDialogTitle">Nouveau client</h2>
+        <div class="dialog-head"><h2 id="clientDialogTitle">Nouveau client</h2>
+          <button type="button" class="dialog-close" data-dialog="clientDialog" title="Fermer sans enregistrer" aria-label="Fermer la fiche client">×</button>
+        </div>
         <label class="small" for="cName">Nom et prénom</label>
         <input id="cName" class="field" placeholder="NOM Prénom (2e prénom si homonyme)" autocomplete="off">
         <div class="small" style="margin-top:4px">Format conseillé : NOM en majuscules, Prénom puis éventuel deuxième prénom.</div>
@@ -1194,7 +1214,7 @@ function renderShell() {
         <input id="cPhone" class="field" placeholder="Téléphone (facultatif)" style="margin-top:8px">
         <input id="cEmail" class="field" type="email" placeholder="Email (facultatif)" style="margin-top:8px">
         <div class="row" style="justify-content:flex-end;margin-top:14px">
-          <button value="cancel" class="secondary">Annuler</button>
+          <button type="button" class="secondary dialog-cancel" data-dialog="clientDialog">Annuler</button>
           <button id="saveClientBtn" type="button" class="primary">Enregistrer</button>
         </div>
         <div id="clientMsg" class="small"></div>
@@ -1261,6 +1281,7 @@ function bindEvents() {
 
   document.querySelector('#sellSearch').oninput = renderSellProducts
   document.querySelector('#productSearch').oninput = renderProducts
+  document.querySelector('#includeInactiveProducts').onchange = renderProducts
   document.querySelectorAll('.product-filter-field').forEach(select => {
     select.onchange = () => { updateProductFilterValues(select); renderProducts() }
   })
@@ -1293,16 +1314,35 @@ function bindEvents() {
 
   document.querySelector('#addProductBtn').onclick = () => openProductDialog()
   document.querySelector('#addClientBtn').onclick = () => openClientDialog()
+  document.querySelector('#quickAddClient').onclick = () => openClientDialog(null, { fromSale: true })
+  document.querySelectorAll('.dialog-close, .dialog-cancel').forEach(button => {
+    button.onclick = () => requestDialogClose(button.dataset.dialog)
+  })
   document.querySelector('#saveProductBtn').onclick = saveProduct
+  document.querySelector('#toggleProductActiveBtn').onclick = toggleProductActive
   document.querySelector('#pPricingMode').onchange = updateProductPricingForm
+  document.querySelector('#addUnitTierBtn').onclick = () => {
+    appendUnitTierRow()
+    document.querySelector('#productDialog').dataset.dirty='true'
+  }
   document.querySelector('#pCategory').onchange = () => renderSubfamilyChoices()
   document.querySelector('#pStockTracked').onchange = updateTrackedStockForm
   document.querySelector('#saveClientBtn').onclick = saveCustomer
   document.querySelector('#cName').oninput = renderClientDuplicateHint
   for (const id of ['productDialog','clientDialog']) {
     const dialog = document.querySelector('#'+id)
-    dialog.addEventListener('input', saveFormDraft)
-    dialog.addEventListener('change', saveFormDraft)
+    dialog.addEventListener('input', event => {
+      dialog.dataset.dirty = 'true'
+      saveFormDraft(event)
+    })
+    dialog.addEventListener('change', event => {
+      dialog.dataset.dirty = 'true'
+      saveFormDraft(event)
+    })
+    dialog.addEventListener('cancel', event => {
+      event.preventDefault()
+      requestDialogClose(id)
+    })
     dialog.addEventListener('close', () => {
       const draft = readFormDraft()
       if (draft?.dialogId === id) sessionStorage.removeItem('epices_form_draft')
@@ -1505,7 +1545,7 @@ async function loadData() {
   organizationId = profileRes.data.organization_id
 
   const [
-    categoriesRes, suppliersRes, productsRes, tiersRes, customersRes, settingsRes,
+    categoriesRes, suppliersRes, productsRes, tiersRes, unitTiersRes, customersRes, settingsRes,
     loyaltyRes, salesRes, linesRes, paymentsRes, expensesRes,
     closingsRes, bankRes, rulesRes, forecastRes, remittanceBatchesRes, remittanceItemsRes
   ] = await Promise.all([
@@ -1513,6 +1553,7 @@ async function loadData() {
     supabase.from('suppliers').select('id,name,active,organization_id').order('name'),
     supabase.from('products').select('*').order('name'),
     supabase.from('product_price_tiers').select('*').eq('active',true).order('quantity'),
+    supabase.from('product_unit_price_tiers').select('*').eq('active',true).order('quantity'),
     fetchAllOrgRows('customers', 'display_name', true),
     supabase.from('settings').select('*').single(),
     fetchAllOrgRows('loyalty_events', 'created_at', false),
@@ -1529,7 +1570,7 @@ async function loadData() {
   ])
 
   const error = [
-    categoriesRes.error, suppliersRes.error, productsRes.error, tiersRes.error, customersRes.error, settingsRes.error,
+    categoriesRes.error, suppliersRes.error, productsRes.error, tiersRes.error, unitTiersRes.error, customersRes.error, settingsRes.error,
     loyaltyRes.error, salesRes.error, linesRes.error, paymentsRes.error, expensesRes.error,
     closingsRes.error, bankRes.error, rulesRes.error, forecastRes.error,
     remittanceBatchesRes.error, remittanceItemsRes.error
@@ -1541,6 +1582,7 @@ async function loadData() {
   suppliers = suppliersRes.data || []
   products = productsRes.data || []
   productPriceTiers = tiersRes.data || []
+  productUnitPriceTiers = unitTiersRes.data || []
   customers = customersRes.data || []
   settings = settingsRes.data
   loyaltyEvents = loyaltyRes.data || []
@@ -1586,6 +1628,29 @@ function activeProducts() {
   return products.filter(p => p.active)
 }
 
+function unitTiersForProduct(productId) {
+  return productUnitPriceTiers
+    .filter(t=>t.product_id===productId && t.active!==false)
+    .sort((a,b)=>num(a.quantity)-num(b.quantity))
+}
+
+function unitBundlePriceHt(product, qty) {
+  const base = num(product.sale_price_ht)/(num(product.sale_price_basis)||1)
+  const tiers=unitTiersForProduct(product.id)
+  if(!tiers.length) return Number((base*qty).toFixed(2))
+  if(!Number.isInteger(qty) || qty<1 || qty>1000) return NaN
+  const costs=Array(qty+1).fill(Infinity)
+  costs[0]=0
+  for(let i=1;i<=qty;i++){
+    costs[i]=costs[i-1]+base
+    for(const tier of tiers){
+      const q=num(tier.quantity)
+      if(q<=i) costs[i]=Math.min(costs[i],costs[i-q]+num(tier.price_ht))
+    }
+  }
+  return Number(costs[qty].toFixed(2))
+}
+
 function tiersForProduct(productId) {
   return productPriceTiers
     .filter(t => t.product_id === productId && t.active !== false)
@@ -1594,7 +1659,11 @@ function tiersForProduct(productId) {
 
 function productPriceSummary(product) {
   if (product.pricing_mode === 'free_unit') return 'Prix libre / unité'
-  if (product.pricing_mode === 'fixed_unit') return `${eur(product.sale_price_ht)} / unité`
+  if (product.pricing_mode === 'fixed_unit') {
+    const tiers=unitTiersForProduct(product.id)
+    return `${eur(product.sale_price_ht)} / unité` +
+      (tiers.length ? ' · '+tiers.map(t=>`${t.quantity} unités : ${eur(t.price_ht)}`).join(' · ') : '')
+  }
   const tiers = tiersForProduct(product.id)
   if (!tiers.length) return num(product.sale_price_ht) > 0
     ? `${eur(product.sale_price_ht)} / ${num(product.sale_price_basis) || 100} ${esc(product.stock_unit)}`
@@ -1630,6 +1699,7 @@ function lineGrossHt(item) {
   const product = products.find(p => p.id === item.id)
   if (!product) return 0
   if (product.pricing_mode === 'free_unit') return Number((num(item.unitPriceHt) * num(item.qty)).toFixed(2))
+  if (product.pricing_mode === 'fixed_unit') return unitBundlePriceHt(product,num(item.qty))
   return interpolatedPriceHt(product, item.qty)
 }
 
@@ -1728,16 +1798,20 @@ function productCardHtml(p, isTop = false) {
     ? 'Stock à saisir'
     : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
   return `
-    <button class="product-card ${categoryColorClass(p)} ${isTop ? 'top-product' : ''} ${noTariff ? 'tariff-missing' : ''}" data-id="${p.id}">
-      <div class="row space product-card-title">
-        <b>${esc(p.name)}</b>
-        ${isTop ? '<span class="top-product-badge">Top</span>' : ''}
-      </div>
-      <span>${productPriceSummary(p)}</span>
-      <small class="${p.stock_tracked !== false && !p.stock_pending && num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
-        ${stockLabel}
-      </small>
-    </button>
+    <div class="sale-product-tile">
+      <button type="button" class="product-card ${categoryColorClass(p)} ${isTop ? 'top-product' : ''} ${noTariff ? 'tariff-missing' : ''}" data-id="${p.id}">
+        <div class="row space product-card-title">
+          <b>${p.checkout_code ? `<span class="checkout-code">${String(p.checkout_code).padStart(2,'0')}</span> ` : ''}${esc(p.name)}</b>
+          ${isTop ? '<span class="top-product-badge">Top</span>' : ''}
+        </div>
+        <span>${productPriceSummary(p)}</span>
+        <small class="${p.stock_tracked !== false && !p.stock_pending && num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
+          ${stockLabel}
+        </small>
+      </button>
+      <button type="button" class="secondary edit-product-shortcut" data-id="${p.id}"
+        title="Modifier la fiche et le prix de ${esc(p.name)}" aria-label="Modifier le produit ${esc(p.name)}">⚙</button>
+    </div>
   `
 }
 
@@ -1748,28 +1822,32 @@ function renderSellProducts() {
 
   const query = input.value.trim()
   const popularity = productPopularityMap()
+  const numericQuery=/^\d+$/.test(query) ? Number(query) : null
   const filtered = activeProducts()
-    .filter(p => matchesSearch([p.name,p.sku,p.subfamily].join(' '),query))
+    .filter(p => numericQuery!==null
+      ? p.checkout_code===numericQuery
+      : matchesSearch([p.name,p.sku,p.subfamily].join(' '),query))
     .sort((a,b) => {
-      const featured = Number(!!b.top20_hint)-Number(!!a.top20_hint)
-      if (featured) return featured
-      const diff = num(popularity.get(b.id)) - num(popularity.get(a.id))
-      return diff || a.name.localeCompare(b.name,'fr')
+      const aTop=num(a.checkout_code)>=1&&num(a.checkout_code)<=20
+      const bTop=num(b.checkout_code)>=1&&num(b.checkout_code)<=20
+      if(aTop!==bTop) return aTop ? -1 : 1
+      if(aTop&&bTop) return a.checkout_code-b.checkout_code
+      const ac=num(a.checkout_code)||Number.MAX_SAFE_INTEGER
+      const bc=num(b.checkout_code)||Number.MAX_SAFE_INTEGER
+      return ac-bc || (num(popularity.get(b.id))-num(popularity.get(a.id))) ||
+        a.name.localeCompare(b.name,'fr')
     })
 
   if (query) {
-    container.innerHTML = filtered.map(p => productCardHtml(p,!!p.top20_hint)).join('')
+    container.innerHTML = filtered.map(p => productCardHtml(p,p.checkout_code>=1 && p.checkout_code<=20)).join('')
   } else {
-    const featured=filtered.filter(p=>p.top20_hint).slice(0,20)
-    const featuredIds=new Set(featured.map(p=>p.id))
-    const fill=filtered.filter(p=>!featuredIds.has(p.id)).slice(0,Math.max(0,20-featured.length))
-    const top=[...featured,...fill]
+    const top=filtered.filter(p=>p.checkout_code>=1&&p.checkout_code<=20)
     const topIds=new Set(top.map(p=>p.id))
     const rest=filtered.filter(p=>!topIds.has(p.id))
     container.innerHTML = `
       <div class="sell-product-section-title">
-        <b>Les plus vendus</b>
-        <span class="small">Top 20 préparé avec Benoît, puis enrichi par les ventes enregistrées</span>
+        <b>Favoris de Benoît — codes 01 à 20</b>
+        <span class="small">Numéros fixes, indépendants du classement des ventes</span>
       </div>
       ${top.map(p => productCardHtml(p,true)).join('')}
       ${rest.length ? `<div class="sell-product-section-title all-products"><b>Tous les autres produits</b></div>${rest.map(p => productCardHtml(p,false)).join('')}` : ''}
@@ -1777,14 +1855,18 @@ function renderSellProducts() {
   }
 
   container.querySelectorAll('.product-card').forEach(btn => btn.onclick = () => addToCart(btn.dataset.id))
+  container.querySelectorAll('.edit-product-shortcut').forEach(btn => {
+    btn.onclick = () => openProductDialog(btn.dataset.id)
+  })
 }
 
 function addToCart(id) {
   const product = products.find(p => p.id === id)
   if (!product) return
 
-  if (product.pricing_mode === 'tiered_weight' && !tiersForProduct(id).length && !(num(product.sale_price_ht)>0)) {
-    return alert('Tarif à compléter pour ce produit dans l’onglet Produits.')
+  if ((product.pricing_mode === 'tiered_weight' && !tiersForProduct(id).length && !(num(product.sale_price_ht)>0)) ||
+      (product.pricing_mode === 'fixed_unit' && !(num(product.sale_price_ht)>0))) {
+    return alert('Tarif à compléter. Utilise la roue dentée pour renseigner le prix du produit.')
   }
 
   if (product.pricing_mode === 'free_unit') {
@@ -1835,7 +1917,7 @@ function renderCart() {
           </div>
           <div style="text-align:right">
             <b>${eur(lineGrossHt(item))}</b>
-            <div class="small">${product.pricing_mode === 'tiered_weight' ? 'prix interpolé selon paliers' : product.pricing_mode === 'free_unit' ? `${eur(item.unitPriceHt)} / unité` : 'prix fixe'}</div>
+            <div class="small">${product.pricing_mode === 'tiered_weight' ? 'prix selon le poids' : product.pricing_mode === 'free_unit' ? `${eur(item.unitPriceHt)} / unité` : (unitTiersForProduct(product.id).length ? 'tarif par lots' : 'prix fixe')}</div>
           </div>
         </div>
       </div>
@@ -1909,6 +1991,10 @@ async function completeSale() {
   for (const item of cart) {
     const product = products.find(p => p.id === item.id)
     if (!product) return msg.textContent = 'Produit introuvable.'
+    if (product.pricing_mode === 'fixed_unit' && unitTiersForProduct(product.id).length &&
+        (!Number.isInteger(item.qty) || item.qty<1 || item.qty>1000)) {
+      return msg.textContent = 'Les tarifs par lots exigent une quantité entière entre 1 et 1000 unités.'
+    }
     if (product.stock_tracked !== false && item.qty > num(product.stock_quantity)) {
       return msg.textContent = `Stock insuffisant pour ${product.name}.`
     }
@@ -2054,10 +2140,16 @@ function renderProducts() {
   if (!input || !body) return
 
   const query = input.value.trim()
-  const matching = products.filter(p => matchesSearch(
-    [p.name,p.sku,p.subfamily,p.preferred_supplier,p.supplier_reference,
-     p.alternative_supplier,p.alternative_supplier_reference].join(' '),query
-  ) && productPassesAdvancedFilters(p))
+  const numericQuery=/^\d+$/.test(query) ? Number(query) : null
+  const includesArchived=document.querySelector('#includeInactiveProducts')?.checked || false
+  const inactiveFilterRequested=[...document.querySelectorAll('.product-filter-row')].some(row=>
+    row.querySelector('.product-filter-field').value==='active_status' &&
+    row.querySelector('.product-filter-value').value==='inactive')
+  const matching = products.filter(p => (p.active || includesArchived || inactiveFilterRequested)
+    && (numericQuery!==null ? p.checkout_code===numericQuery : matchesSearch(
+      [p.name,p.sku,p.subfamily,p.preferred_supplier,p.supplier_reference,
+       p.alternative_supplier,p.alternative_supplier_reference].join(' '),query))
+    && productPassesAdvancedFilters(p))
   const counter=document.querySelector('#productFilterResultCount')
   if(counter) counter.textContent = matching.length+' produit(s) sur '+products.length
   body.innerHTML = matching.map(p => {
@@ -2066,6 +2158,7 @@ function renderProducts() {
       p.stock_pending ? '<span class="muted">À saisir</span>' : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
     return `
       <tr>
+        <td><b>${p.checkout_code || '—'}</b></td>
         <td>${esc(p.sku || '—')}</td>
         <td><b>${esc(p.name)}</b>${p.top20_hint ? '<div class="small"><b>Top 20</b></div>' : ''}</td>
         <td>${esc(category)}</td>
@@ -2328,6 +2421,34 @@ function updateTrackedStockForm() {
   if (block) block.style.display = tracked ? '' : 'none'
 }
 
+function appendUnitTierRow(qty='',price='') {
+  const rows=document.querySelector('#unitTierRows')
+  if(!rows || rows.children.length>=20) return
+  const row=document.createElement('div')
+  row.className='unit-tier-row'
+  row.innerHTML=`<label class="small">Quantité <input class="field unit-tier-qty" type="number" min="2" max="1000" step="1" placeholder="3" value="${esc(qty)}"></label>
+    <label class="small">Prix du lot (€) <input class="field unit-tier-price" type="number" min="0.01" step="0.01" placeholder="26" value="${esc(price)}"></label>
+    <button type="button" class="secondary unit-tier-remove" title="Supprimer cette règle de lot" aria-label="Retirer ce tarif">×</button>`
+  row.querySelector('.unit-tier-remove').onclick=()=>{
+    row.remove()
+    document.querySelector('#productDialog').dataset.dirty='true'
+    saveFormDraft({currentTarget:document.querySelector('#productDialog')})
+  }
+  rows.appendChild(row)
+}
+function getUnitTierInputs() {
+  return [...document.querySelectorAll('#unitTierRows .unit-tier-row')].map(row=>({
+    quantity:Number(row.querySelector('.unit-tier-qty').value),
+    price_ht:Number(row.querySelector('.unit-tier-price').value)
+  }))
+}
+function setUnitTierInputs(tiers=[]) {
+  const container=document.querySelector('#unitTierRows')
+  if(!container) return
+  container.innerHTML=''
+  for(const t of tiers) appendUnitTierRow(t.quantity,t.price_ht)
+}
+
 function updateProductPricingForm() {
   const mode = document.querySelector('#pPricingMode')?.value || 'tiered_weight'
   const weighted = mode === 'tiered_weight'
@@ -2352,11 +2473,20 @@ function updateProductPricingForm() {
     help.innerHTML = weighted
       ? '<b>Produit vendu au poids.</b> Saisis les prix des paliers connus. Une quantité intermédiaire sera calculée automatiquement.'
       : fixed
-        ? '<b>Produit vendu à l’unité.</b> Saisis son prix de vente fixe ci-dessous.'
+        ? '<b>Produit vendu à l’unité.</b> Saisis le prix d’une unité et ajoute éventuellement des tarifs par lots.'
         : '<b>Produit à prix libre.</b> Aucun prix de vente n’est enregistré ici : Benoît le saisira au moment de l’ajouter au ticket.'
   }
 
   if (!fixed && document.querySelector('#pSell')) document.querySelector('#pSell').value = ''
+}
+
+function requestDialogClose(id) {
+  const dialog = document.querySelector('#'+id)
+  if (!dialog?.open) return
+  if (dialog.dataset.dirty === 'true' &&
+      !confirm('Fermer sans enregistrer ? Les modifications de cette fiche seront perdues.')) return
+  sessionStorage.removeItem('epices_form_draft')
+  dialog.close()
 }
 
 function openProductDialog(productId = null) {
@@ -2364,11 +2494,17 @@ function openProductDialog(productId = null) {
   const product = productId ? products.find(p => p.id === productId) : null
   dialog.dataset.editId = product?.id || ''
   document.querySelector('#productDialogTitle').textContent = product ? 'Modifier le produit' : 'Nouveau produit'
+  const activeButton = document.querySelector('#toggleProductActiveBtn')
+  activeButton.style.display = product ? '' : 'none'
+  if (product) activeButton.textContent = product.active ? 'Désactiver le produit' : 'Réactiver le produit'
 
   document.querySelector('#pCategory').innerHTML = categories
     .filter(c => c.active || c.id === product?.category_id)
     .map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
   document.querySelector('#pStockTracked').checked = product?.stock_tracked !== false
+  document.querySelector('#pCheckoutCode').value = product
+    ? (product.checkout_code ?? '')
+    : products.reduce((m,p)=>Math.max(m,num(p.checkout_code)),0)+1
   renderSupplierChoices('pSupplier',product?.preferred_supplier || '')
   renderSupplierChoices('pAltSupplier',product?.alternative_supplier || '')
 
@@ -2394,6 +2530,7 @@ function openProductDialog(productId = null) {
     document.querySelector('#pAltSupplierBuy').value = num(product.alternative_purchase_price_ht) || ''
     document.querySelector('#productAltSupplier').open = !!product.alternative_supplier
     document.querySelector('#pTop20').checked = !!product.top20_hint
+    setUnitTierInputs(unitTiersForProduct(product.id))
     if (product.pricing_mode === 'fixed_unit') document.querySelector('#pSell').value = num(product.sale_price_ht) || ''
 
     for (const tier of tiersForProduct(product.id)) {
@@ -2403,13 +2540,44 @@ function openProductDialog(productId = null) {
   } else {
     document.querySelector('#pPricingMode').value = 'tiered_weight'
     document.querySelector('#productAltSupplier').open = false
+    setUnitTierInputs()
     renderSubfamilyChoices()
   }
 
   document.querySelector('#productMsg').textContent = ''
   updateProductPricingForm()
   updateTrackedStockForm()
+  dialog.dataset.dirty = 'false'
   dialog.showModal()
+}
+
+async function toggleProductActive() {
+  const dialog = document.querySelector('#productDialog')
+  const product = products.find(p => p.id === dialog.dataset.editId)
+  const msg = document.querySelector('#productMsg')
+  if (!product) return
+  if (cart.some(item => item.id === product.id)) {
+    msg.textContent = 'Ce produit est présent dans le panier. Termine ou retire cette ligne avant de le désactiver.'
+    return
+  }
+  if (dialog.dataset.dirty === 'true') {
+    msg.textContent = 'Enregistre ou annule les modifications de la fiche avant de changer son statut.'
+    return
+  }
+  const nextActive = !product.active
+  if (!confirm(nextActive
+    ? 'Réactiver « '+product.name+' » pour les prochaines ventes ?'
+    : 'Désactiver « '+product.name+' » ? Il ne sera plus proposé à la vente, mais son historique sera conservé.')) return
+  const btn = document.querySelector('#toggleProductActiveBtn')
+  btn.disabled = true
+  const { error } = await supabase.from('products')
+    .update({active:nextActive,updated_at:new Date().toISOString()})
+    .eq('id',product.id).eq('organization_id',organizationId)
+  btn.disabled = false
+  if (error) { msg.textContent = 'Erreur : '+error.message; return }
+  sessionStorage.removeItem('epices_form_draft')
+  dialog.close()
+  await loadData()
 }
 
 async function saveProduct() {
@@ -2420,6 +2588,22 @@ async function saveProduct() {
   const editId = dialog.dataset.editId || null
   const existingProduct = editId ? products.find(p=>p.id===editId) : null
   const pricingMode = document.querySelector('#pPricingMode').value
+  const codeRaw=document.querySelector('#pCheckoutCode').value.trim()
+  const checkoutCode=codeRaw ? Number(codeRaw) : null
+  if(checkoutCode!==null) {
+    if(!Number.isInteger(checkoutCode)||checkoutCode<1||checkoutCode>999999)
+      return msg.textContent='Code caisse : nombre entier de 1 à 999999 requis.'
+    const match=products.find(p=>p.checkout_code===checkoutCode && p.id!==editId)
+    if(match) return msg.textContent='Code '+checkoutCode+' déjà utilisé par '+match.name+'. Choisis un numéro libre.'
+  }
+  const unitTiers=pricingMode==='fixed_unit' ? getUnitTierInputs() : []
+  if(unitTiers.length>20 || unitTiers.some(t=>!Number.isInteger(t.quantity) || t.quantity<2 || t.quantity>1000 ||
+       !Number.isFinite(t.price_ht)||t.price_ht<=0)) {
+    return msg.textContent='Tarif par lot invalide : quantité entière 2 à 1000 et prix strictement positif.'
+  }
+  if(new Set(unitTiers.map(t=>t.quantity)).size!==unitTiers.length) {
+    return msg.textContent='Chaque quantité de lot doit être unique.'
+  }
   const stockUnit = pricingMode === 'tiered_weight' ? 'g' : 'unit'
   const tiers = [
     [25, Number(document.querySelector('#pPrice25').value || 0)],
@@ -2436,6 +2620,7 @@ async function saveProduct() {
   const payload = {
     organization_id: organizationId,
     name: document.querySelector('#pName').value.trim(),
+    checkout_code:checkoutCode,
     category_id: document.querySelector('#pCategory').value || null,
     subfamily: document.querySelector('#pSubfamily').value || null,
     stock_tracked: document.querySelector('#pStockTracked').checked,
@@ -2488,6 +2673,10 @@ async function saveProduct() {
     }
 
     await syncProductTiers(productId, pricingMode === 'tiered_weight' ? tiers : [])
+    const {error:bundleError}=await supabase.rpc('replace_product_unit_tiers',{
+      p_product_id:productId,p_rows:unitTiers
+    })
+    if(bundleError) throw bundleError
     sessionStorage.removeItem('epices_form_draft')
     dialog.close()
     await loadData()
@@ -2496,17 +2685,20 @@ async function saveProduct() {
   }
 }
 
-function openClientDialog(customerId = null) {
+function openClientDialog(customerId = null, { fromSale = false } = {}) {
   const dialog = document.querySelector('#clientDialog')
   const customer = customerId ? customers.find(c => c.id === customerId) : null
   dialog.dataset.editId = customer?.id || ''
+  dialog.dataset.fromSale = fromSale ? 'true' : 'false'
   document.querySelector('#clientDialogTitle').textContent = customer ? 'Modifier le client' : 'Nouveau client'
+  document.querySelector('#saveClientBtn').textContent = fromSale ? 'Créer et choisir' : 'Enregistrer'
   document.querySelector('#cName').value = customer?.display_name || ''
   document.querySelector('#cPhone').value = customer?.phone || ''
   document.querySelector('#cEmail').value = customer?.email || ''
   document.querySelector('#cVisits').value = customer ? loyaltyInfo(customer.id).visits : 0
   document.querySelector('#clientDuplicateWarning').style.display = 'none'
   document.querySelector('#clientMsg').textContent = ''
+  dialog.dataset.dirty = 'false'
   dialog.showModal()
 }
 
@@ -2540,7 +2732,7 @@ async function saveCustomer() {
   }
   const btn = document.querySelector('#saveClientBtn')
   btn.disabled = true
-  const {error} = await supabase.rpc('save_customer_with_visits', {
+  const {data: savedCustomerId,error} = await supabase.rpc('save_customer_with_visits', {
     p_customer_id: dialog.dataset.editId || null,
     p_display_name: name,
     p_phone: document.querySelector('#cPhone').value.trim(),
@@ -2550,9 +2742,11 @@ async function saveCustomer() {
   btn.disabled = false
   if (error) return msg.textContent = 'Erreur : ' + error.message
 
+  const selectAfterSave = dialog.dataset.fromSale === 'true'
   sessionStorage.removeItem('epices_form_draft')
   dialog.close()
   await loadData()
+  if (selectAfterSave && savedCustomerId) selectCustomer(savedCustomerId)
 }
 
 
@@ -2608,6 +2802,7 @@ function saveOfflineSnapshot() {
     organization_id: organizationId,
     products,
     productPriceTiers,
+    productUnitPriceTiers,
     customers,
     categories,
     suppliers,
@@ -2624,6 +2819,7 @@ function useOfflineSnapshot() {
   organizationId = offlineSnapshot.organization_id
   products = offlineSnapshot.products || []
   productPriceTiers = offlineSnapshot.productPriceTiers || []
+  productUnitPriceTiers = offlineSnapshot.productUnitPriceTiers || []
   customers = offlineSnapshot.customers || []
   categories = offlineSnapshot.categories || []
   suppliers = offlineSnapshot.suppliers || []
@@ -2892,19 +3088,19 @@ function downloadCsv(filename, headers, rows) {
 
 function exportProducts() {
   const headers = [
-    'sku','name','category','subfamily','active','stock_unit','pricing_mode',
+    'sku','checkout_code','name','category','subfamily','active','stock_unit','pricing_mode',
     'preferred_supplier','supplier_reference','alternative_supplier','alternative_supplier_reference',
     'alternative_purchase_price_ht','top20_hint','stock_pending','stock_tracked',
     'sale_price_25g_ht','sale_price_50g_ht','sale_price_100g_ht','sale_price_200g_ht','sale_price_unit_ht',
     'sale_price_ht','sale_price_basis','purchase_unit','purchase_unit_quantity',
     'purchase_unit_stock_equivalent','stock_quantity','stock_alert_threshold',
     'purchase_price_ht','purchase_price_basis','vat_rate_purchase','vat_rate_sale',
-    'loyalty_eligible','loyalty_reward_quantity'
+    'loyalty_eligible','loyalty_reward_quantity','unit_lots_json'
   ]
 
   const tierValue=(productId,quantity)=>tiersForProduct(productId).find(t=>num(t.quantity)===quantity)?.price_ht ?? ''
   const rows = products.map(p => [
-    p.sku,p.name,categories.find(c => c.id === p.category_id)?.name || '',p.subfamily || '',
+    p.sku,p.checkout_code ?? '',p.name,categories.find(c => c.id === p.category_id)?.name || '',p.subfamily || '',
     p.active,p.stock_unit,p.pricing_mode || 'tiered_weight',
     p.preferred_supplier || '',p.supplier_reference || '',
     p.alternative_supplier || '',p.alternative_supplier_reference || '',p.alternative_purchase_price_ht ?? '',
@@ -2914,7 +3110,8 @@ function exportProducts() {
     p.sale_price_ht,p.sale_price_basis,p.purchase_unit,p.purchase_unit_quantity,
     p.purchase_unit_stock_equivalent,p.stock_pending ? '' : p.stock_quantity,p.stock_alert_threshold,
     p.purchase_price_ht,p.purchase_price_basis,p.vat_rate_purchase,p.vat_rate_sale,
-    p.loyalty_eligible,p.loyalty_reward_quantity
+    p.loyalty_eligible,p.loyalty_reward_quantity,
+    JSON.stringify(unitTiersForProduct(p.id).map(t=>({quantity:t.quantity,price_ht:t.price_ht})))
   ])
 
   downloadCsv(`produits_${todayStamp()}.csv`, headers, rows)
