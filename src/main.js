@@ -63,7 +63,7 @@ const SUBFAMILIES = {
   'Accessoires': ['Accessoires']
 }
 
-const PRODUCT_DRAFT_FIELDS = ['pName','pCategory','pSubfamily','pPricingMode','pStock','pThreshold',
+const PRODUCT_DRAFT_FIELDS = ['pName','pCheckoutCode','pCategory','pSubfamily','pPricingMode','pStock','pThreshold',
   'pBuy','pSell','pPrice25','pPrice50','pPrice100','pPrice200','pSupplier','pSupplierRef',
   'pAltSupplier','pAltSupplierRef','pAltSupplierBuy','pTop20','pStockTracked']
 const CLIENT_DRAFT_FIELDS = ['cName','cVisits','cPhone','cEmail']
@@ -81,7 +81,7 @@ function saveFormDraft(event) {
   }))
   sessionStorage.setItem('epices_form_draft', JSON.stringify({
     dialogId:dialog.id,editId:dialog.dataset.editId || null,
-    updatedAt:Date.now(),data
+    updatedAt:Date.now(),data:dialog.id==='productDialog' ? {...data,unitTiers:getUnitTierInputs()} : data
   }))
 }
 function restoreFormDraft() {
@@ -114,6 +114,7 @@ function restoreFormDraft() {
     else element.value = value
   }
   if (draft.dialogId === 'productDialog') {
+    if(Array.isArray(draft.data.unitTiers)) setUnitTierInputs(draft.data.unitTiers)
     updateProductPricingForm()
     updateTrackedStockForm()
   } else renderClientDuplicateHint()
@@ -1094,6 +1095,9 @@ function renderShell() {
 
         <label class="small">Nom</label>
         <input id="pName" class="field" placeholder="Ex. Gingembre moulu">
+        <label class="small" for="pCheckoutCode" style="display:block;margin-top:8px">Code caisse (numéro unique et permanent)</label>
+        <input id="pCheckoutCode" class="field" type="number" min="1" max="999999" step="1" placeholder="Ex. 21">
+        <div class="small">Un numéro ne peut appartenir qu’à un seul produit. Il ne change pas quand les ventes évoluent.</div>
 
         <div class="grid product-form-grid" style="margin-top:8px">
           <div>
@@ -1166,6 +1170,10 @@ function renderShell() {
         <div id="fixedPriceBlock" style="display:none;margin-top:10px">
           <label class="small">Prix de vente par unité</label>
           <input id="pSell" type="number" min="0" step="0.01" class="field" placeholder="Ex. 12,00">
+          <div class="small" style="margin-top:7px"><b>Tarifs par lot</b> — prix total pour une quantité d’unités. Le prix ci-dessus reste celui d'une unité.</div>
+          <div id="unitTierRows"></div>
+          <button id="addUnitTierBtn" type="button" class="secondary" style="margin-top:6px">+ Ajouter un tarif par lot</button>
+          <div class="small">Ex. 3 gousses : 26 €. Pour 4 : un lot de 3 + une gousse = 36 €. Aucune remise globale sur le ticket.</div>
         </div>
 
         <div id="tierPriceBlock" style="margin-top:12px">
@@ -1309,6 +1317,10 @@ function bindEvents() {
   document.querySelector('#saveProductBtn').onclick = saveProduct
   document.querySelector('#toggleProductActiveBtn').onclick = toggleProductActive
   document.querySelector('#pPricingMode').onchange = updateProductPricingForm
+  document.querySelector('#addUnitTierBtn').onclick = () => {
+    appendUnitTierRow()
+    document.querySelector('#productDialog').dataset.dirty='true'
+  }
   document.querySelector('#pCategory').onchange = () => renderSubfamilyChoices()
   document.querySelector('#pStockTracked').onchange = updateTrackedStockForm
   document.querySelector('#saveClientBtn').onclick = saveCustomer
@@ -2389,6 +2401,34 @@ function updateTrackedStockForm() {
   if (block) block.style.display = tracked ? '' : 'none'
 }
 
+function appendUnitTierRow(qty='',price='') {
+  const rows=document.querySelector('#unitTierRows')
+  if(!rows || rows.children.length>=20) return
+  const row=document.createElement('div')
+  row.className='unit-tier-row'
+  row.innerHTML=`<label class="small">Quantité <input class="field unit-tier-qty" type="number" min="2" max="1000" step="1" placeholder="3" value="${esc(qty)}"></label>
+    <label class="small">Prix du lot (€) <input class="field unit-tier-price" type="number" min="0.01" step="0.01" placeholder="26" value="${esc(price)}"></label>
+    <button type="button" class="secondary unit-tier-remove" title="Supprimer cette règle de lot" aria-label="Retirer ce tarif">×</button>`
+  row.querySelector('.unit-tier-remove').onclick=()=>{
+    row.remove()
+    document.querySelector('#productDialog').dataset.dirty='true'
+    saveFormDraft({currentTarget:document.querySelector('#productDialog')})
+  }
+  rows.appendChild(row)
+}
+function getUnitTierInputs() {
+  return [...document.querySelectorAll('#unitTierRows .unit-tier-row')].map(row=>({
+    quantity:Number(row.querySelector('.unit-tier-qty').value),
+    price_ht:Number(row.querySelector('.unit-tier-price').value)
+  }))
+}
+function setUnitTierInputs(tiers=[]) {
+  const container=document.querySelector('#unitTierRows')
+  if(!container) return
+  container.innerHTML=''
+  for(const t of tiers) appendUnitTierRow(t.quantity,t.price_ht)
+}
+
 function updateProductPricingForm() {
   const mode = document.querySelector('#pPricingMode')?.value || 'tiered_weight'
   const weighted = mode === 'tiered_weight'
@@ -2413,7 +2453,7 @@ function updateProductPricingForm() {
     help.innerHTML = weighted
       ? '<b>Produit vendu au poids.</b> Saisis les prix des paliers connus. Une quantité intermédiaire sera calculée automatiquement.'
       : fixed
-        ? '<b>Produit vendu à l’unité.</b> Saisis son prix de vente fixe ci-dessous.'
+        ? '<b>Produit vendu à l’unité.</b> Saisis le prix d’une unité et ajoute éventuellement des tarifs par lots.'
         : '<b>Produit à prix libre.</b> Aucun prix de vente n’est enregistré ici : Benoît le saisira au moment de l’ajouter au ticket.'
   }
 
@@ -2442,6 +2482,9 @@ function openProductDialog(productId = null) {
     .filter(c => c.active || c.id === product?.category_id)
     .map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
   document.querySelector('#pStockTracked').checked = product?.stock_tracked !== false
+  document.querySelector('#pCheckoutCode').value = product?.checkout_code || (
+    products.reduce((m,p)=>Math.max(m,num(p.checkout_code)),0)+1
+  )
   renderSupplierChoices('pSupplier',product?.preferred_supplier || '')
   renderSupplierChoices('pAltSupplier',product?.alternative_supplier || '')
 
@@ -2467,6 +2510,7 @@ function openProductDialog(productId = null) {
     document.querySelector('#pAltSupplierBuy').value = num(product.alternative_purchase_price_ht) || ''
     document.querySelector('#productAltSupplier').open = !!product.alternative_supplier
     document.querySelector('#pTop20').checked = !!product.top20_hint
+    setUnitTierInputs(unitTiersForProduct(product.id))
     if (product.pricing_mode === 'fixed_unit') document.querySelector('#pSell').value = num(product.sale_price_ht) || ''
 
     for (const tier of tiersForProduct(product.id)) {
@@ -2476,6 +2520,7 @@ function openProductDialog(productId = null) {
   } else {
     document.querySelector('#pPricingMode').value = 'tiered_weight'
     document.querySelector('#productAltSupplier').open = false
+    setUnitTierInputs()
     renderSubfamilyChoices()
   }
 
@@ -2523,6 +2568,22 @@ async function saveProduct() {
   const editId = dialog.dataset.editId || null
   const existingProduct = editId ? products.find(p=>p.id===editId) : null
   const pricingMode = document.querySelector('#pPricingMode').value
+  const codeRaw=document.querySelector('#pCheckoutCode').value.trim()
+  const checkoutCode=codeRaw ? Number(codeRaw) : null
+  if(checkoutCode!==null) {
+    if(!Number.isInteger(checkoutCode)||checkoutCode<1||checkoutCode>999999)
+      return msg.textContent='Code caisse : nombre entier de 1 à 999999 requis.'
+    const match=products.find(p=>p.checkout_code===checkoutCode && p.id!==editId)
+    if(match) return msg.textContent='Code '+checkoutCode+' déjà utilisé par '+match.name+'. Choisis un numéro libre.'
+  }
+  const unitTiers=pricingMode==='fixed_unit' ? getUnitTierInputs() : []
+  if(unitTiers.length>20 || unitTiers.some(t=>!Number.isInteger(t.quantity) || t.quantity<2 || t.quantity>1000 ||
+       !Number.isFinite(t.price_ht)||t.price_ht<=0)) {
+    return msg.textContent='Tarif par lot invalide : quantité entière 2 à 1000 et prix strictement positif.'
+  }
+  if(new Set(unitTiers.map(t=>t.quantity)).size!==unitTiers.length) {
+    return msg.textContent='Chaque quantité de lot doit être unique.'
+  }
   const stockUnit = pricingMode === 'tiered_weight' ? 'g' : 'unit'
   const tiers = [
     [25, Number(document.querySelector('#pPrice25').value || 0)],
@@ -2539,6 +2600,7 @@ async function saveProduct() {
   const payload = {
     organization_id: organizationId,
     name: document.querySelector('#pName').value.trim(),
+    checkout_code:checkoutCode,
     category_id: document.querySelector('#pCategory').value || null,
     subfamily: document.querySelector('#pSubfamily').value || null,
     stock_tracked: document.querySelector('#pStockTracked').checked,
@@ -2591,6 +2653,10 @@ async function saveProduct() {
     }
 
     await syncProductTiers(productId, pricingMode === 'tiered_weight' ? tiers : [])
+    const {error:bundleError}=await supabase.rpc('replace_product_unit_tiers',{
+      p_product_id:productId,p_rows:unitTiers
+    })
+    if(bundleError) throw bundleError
     sessionStorage.removeItem('epices_form_draft')
     dialog.close()
     await loadData()
