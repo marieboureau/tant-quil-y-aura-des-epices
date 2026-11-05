@@ -7,6 +7,7 @@ let session = null
 let organizationId = null
 let products = []
 let productPriceTiers = []
+let productUnitPriceTiers = []
 let customers = []
 let categories = []
 let suppliers = []
@@ -1528,7 +1529,7 @@ async function loadData() {
   organizationId = profileRes.data.organization_id
 
   const [
-    categoriesRes, suppliersRes, productsRes, tiersRes, customersRes, settingsRes,
+    categoriesRes, suppliersRes, productsRes, tiersRes, unitTiersRes, customersRes, settingsRes,
     loyaltyRes, salesRes, linesRes, paymentsRes, expensesRes,
     closingsRes, bankRes, rulesRes, forecastRes, remittanceBatchesRes, remittanceItemsRes
   ] = await Promise.all([
@@ -1536,6 +1537,7 @@ async function loadData() {
     supabase.from('suppliers').select('id,name,active,organization_id').order('name'),
     supabase.from('products').select('*').order('name'),
     supabase.from('product_price_tiers').select('*').eq('active',true).order('quantity'),
+    supabase.from('product_unit_price_tiers').select('*').eq('active',true).order('quantity'),
     fetchAllOrgRows('customers', 'display_name', true),
     supabase.from('settings').select('*').single(),
     fetchAllOrgRows('loyalty_events', 'created_at', false),
@@ -1552,7 +1554,7 @@ async function loadData() {
   ])
 
   const error = [
-    categoriesRes.error, suppliersRes.error, productsRes.error, tiersRes.error, customersRes.error, settingsRes.error,
+    categoriesRes.error, suppliersRes.error, productsRes.error, tiersRes.error, unitTiersRes.error, customersRes.error, settingsRes.error,
     loyaltyRes.error, salesRes.error, linesRes.error, paymentsRes.error, expensesRes.error,
     closingsRes.error, bankRes.error, rulesRes.error, forecastRes.error,
     remittanceBatchesRes.error, remittanceItemsRes.error
@@ -1564,6 +1566,7 @@ async function loadData() {
   suppliers = suppliersRes.data || []
   products = productsRes.data || []
   productPriceTiers = tiersRes.data || []
+  productUnitPriceTiers = unitTiersRes.data || []
   customers = customersRes.data || []
   settings = settingsRes.data
   loyaltyEvents = loyaltyRes.data || []
@@ -1609,6 +1612,29 @@ function activeProducts() {
   return products.filter(p => p.active)
 }
 
+function unitTiersForProduct(productId) {
+  return productUnitPriceTiers
+    .filter(t=>t.product_id===productId && t.active!==false)
+    .sort((a,b)=>num(a.quantity)-num(b.quantity))
+}
+
+function unitBundlePriceHt(product, qty) {
+  const base = num(product.sale_price_ht)/(num(product.sale_price_basis)||1)
+  const tiers=unitTiersForProduct(product.id)
+  if(!tiers.length) return Number((base*qty).toFixed(2))
+  if(!Number.isInteger(qty) || qty<1 || qty>1000) return NaN
+  const costs=Array(qty+1).fill(Infinity)
+  costs[0]=0
+  for(let i=1;i<=qty;i++){
+    costs[i]=costs[i-1]+base
+    for(const tier of tiers){
+      const q=num(tier.quantity)
+      if(q<=i) costs[i]=Math.min(costs[i],costs[i-q]+num(tier.price_ht))
+    }
+  }
+  return Number(costs[qty].toFixed(2))
+}
+
 function tiersForProduct(productId) {
   return productPriceTiers
     .filter(t => t.product_id === productId && t.active !== false)
@@ -1617,7 +1643,11 @@ function tiersForProduct(productId) {
 
 function productPriceSummary(product) {
   if (product.pricing_mode === 'free_unit') return 'Prix libre / unité'
-  if (product.pricing_mode === 'fixed_unit') return `${eur(product.sale_price_ht)} / unité`
+  if (product.pricing_mode === 'fixed_unit') {
+    const tiers=unitTiersForProduct(product.id)
+    return `${eur(product.sale_price_ht)} / unité` +
+      (tiers.length ? ' · '+tiers.map(t=>`${t.quantity} unités : ${eur(t.price_ht)}`).join(' · ') : '')
+  }
   const tiers = tiersForProduct(product.id)
   if (!tiers.length) return num(product.sale_price_ht) > 0
     ? `${eur(product.sale_price_ht)} / ${num(product.sale_price_basis) || 100} ${esc(product.stock_unit)}`
@@ -1653,6 +1683,7 @@ function lineGrossHt(item) {
   const product = products.find(p => p.id === item.id)
   if (!product) return 0
   if (product.pricing_mode === 'free_unit') return Number((num(item.unitPriceHt) * num(item.qty)).toFixed(2))
+  if (product.pricing_mode === 'fixed_unit') return unitBundlePriceHt(product,num(item.qty))
   return interpolatedPriceHt(product, item.qty)
 }
 
@@ -1865,7 +1896,7 @@ function renderCart() {
           </div>
           <div style="text-align:right">
             <b>${eur(lineGrossHt(item))}</b>
-            <div class="small">${product.pricing_mode === 'tiered_weight' ? 'prix interpolé selon paliers' : product.pricing_mode === 'free_unit' ? `${eur(item.unitPriceHt)} / unité` : 'prix fixe'}</div>
+            <div class="small">${product.pricing_mode === 'tiered_weight' ? 'prix selon le poids' : product.pricing_mode === 'free_unit' ? `${eur(item.unitPriceHt)} / unité` : (unitTiersForProduct(product.id).length ? 'tarif par lots' : 'prix fixe')}</div>
           </div>
         </div>
       </div>
@@ -2685,6 +2716,7 @@ function saveOfflineSnapshot() {
     organization_id: organizationId,
     products,
     productPriceTiers,
+    productUnitPriceTiers,
     customers,
     categories,
     suppliers,
@@ -2701,6 +2733,7 @@ function useOfflineSnapshot() {
   organizationId = offlineSnapshot.organization_id
   products = offlineSnapshot.products || []
   productPriceTiers = offlineSnapshot.productPriceTiers || []
+  productUnitPriceTiers = offlineSnapshot.productUnitPriceTiers || []
   customers = offlineSnapshot.customers || []
   categories = offlineSnapshot.categories || []
   suppliers = offlineSnapshot.suppliers || []
