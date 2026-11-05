@@ -1864,8 +1864,9 @@ function addToCart(id) {
   const product = products.find(p => p.id === id)
   if (!product) return
 
-  if (product.pricing_mode === 'tiered_weight' && !tiersForProduct(id).length && !(num(product.sale_price_ht)>0)) {
-    return alert('Tarif à compléter pour ce produit dans l’onglet Produits.')
+  if ((product.pricing_mode === 'tiered_weight' && !tiersForProduct(id).length && !(num(product.sale_price_ht)>0)) ||
+      (product.pricing_mode === 'fixed_unit' && !(num(product.sale_price_ht)>0))) {
+    return alert('Tarif à compléter. Utilise la roue dentée pour renseigner le prix du produit.')
   }
 
   if (product.pricing_mode === 'free_unit') {
