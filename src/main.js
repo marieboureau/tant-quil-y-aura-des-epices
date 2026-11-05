@@ -1749,16 +1749,20 @@ function productCardHtml(p, isTop = false) {
     ? 'Stock à saisir'
     : `${num(p.stock_quantity).toLocaleString('fr-FR')} ${esc(p.stock_unit)}`
   return `
-    <button class="product-card ${categoryColorClass(p)} ${isTop ? 'top-product' : ''} ${noTariff ? 'tariff-missing' : ''}" data-id="${p.id}">
-      <div class="row space product-card-title">
-        <b>${esc(p.name)}</b>
-        ${isTop ? '<span class="top-product-badge">Top</span>' : ''}
-      </div>
-      <span>${productPriceSummary(p)}</span>
-      <small class="${p.stock_tracked !== false && !p.stock_pending && num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
-        ${stockLabel}
-      </small>
-    </button>
+    <div class="sale-product-tile">
+      <button type="button" class="product-card ${categoryColorClass(p)} ${isTop ? 'top-product' : ''} ${noTariff ? 'tariff-missing' : ''}" data-id="${p.id}">
+        <div class="row space product-card-title">
+          <b>${esc(p.name)}</b>
+          ${isTop ? '<span class="top-product-badge">Top</span>' : ''}
+        </div>
+        <span>${productPriceSummary(p)}</span>
+        <small class="${p.stock_tracked !== false && !p.stock_pending && num(p.stock_quantity) <= num(p.stock_alert_threshold) ? 'low' : ''}">
+          ${stockLabel}
+        </small>
+      </button>
+      <button type="button" class="secondary edit-product-shortcut" data-id="${p.id}"
+        title="Modifier la fiche et le prix de ${esc(p.name)}" aria-label="Modifier le produit ${esc(p.name)}">⚙</button>
+    </div>
   `
 }
 
@@ -1798,6 +1802,9 @@ function renderSellProducts() {
   }
 
   container.querySelectorAll('.product-card').forEach(btn => btn.onclick = () => addToCart(btn.dataset.id))
+  container.querySelectorAll('.edit-product-shortcut').forEach(btn => {
+    btn.onclick = () => openProductDialog(btn.dataset.id)
+  })
 }
 
 function addToCart(id) {
