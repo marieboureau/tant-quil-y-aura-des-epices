@@ -1839,12 +1839,9 @@ function renderSellProducts() {
     })
 
   if (query) {
-    container.innerHTML = filtered.map(p => productCardHtml(p,!!p.top20_hint)).join('')
+    container.innerHTML = filtered.map(p => productCardHtml(p,p.checkout_code>=1 && p.checkout_code<=20)).join('')
   } else {
-    const featured=filtered.filter(p=>p.checkout_code>=1&&p.checkout_code<=20).slice(0,20)
-    const featuredIds=new Set(featured.map(p=>p.id))
-    const fill=filtered.filter(p=>!featuredIds.has(p.id)).slice(0,Math.max(0,20-featured.length))
-    const top=[...featured,...fill]
+    const top=filtered.filter(p=>p.checkout_code>=1&&p.checkout_code<=20)
     const topIds=new Set(top.map(p=>p.id))
     const rest=filtered.filter(p=>!topIds.has(p.id))
     container.innerHTML = `
